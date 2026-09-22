@@ -4,11 +4,14 @@ import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { Input } from '@/components/ui/input';
 import { useApp } from '@/lib/store';
+import { useUiLanguage } from '@/lib/i18n';
 import { Search, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 // ============================================================================
 // ViewHeader — consistent, accessible page headers with optional search.
+// RTL-aware: in Arabic UI mode the header text flows right and the back
+// arrow points right (mirrored via rtl:rotate-180).
 // ============================================================================
 
 export function ViewHeader({
@@ -27,6 +30,8 @@ export function ViewHeader({
   className?: string;
 }) {
   const setView = useApp((s) => s.setView);
+  const lang = useUiLanguage();
+  const arabic = lang === 'ar';
   return (
     <header className={cn('mb-5', className)}>
       <div className="flex items-start gap-3">
@@ -34,19 +39,23 @@ export function ViewHeader({
           <Button
             variant="ghost"
             size="icon"
-            className="mt-1 -ml-2 text-muted-foreground"
+            className="mt-1 -ms-2 text-muted-foreground"
             onClick={() => setView('home')}
-            aria-label="Back to home"
+            aria-label={arabic ? 'العودة إلى الرئيسية' : 'Back to home'}
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="h-5 w-5 rtl:rotate-180" />
           </Button>
         )}
-        <div className="min-w-0">
+        <div className={cn('min-w-0', arabic && 'text-start font-arabic')}>
           <div className="flex items-baseline gap-3 flex-wrap">
-            <h1 className="font-display text-2xl sm:text-3xl font-semibold text-foreground leading-tight">{title}</h1>
+            <h1 className={cn('text-2xl sm:text-3xl font-semibold text-foreground leading-tight', !arabic && 'font-display')}>
+              {title}
+            </h1>
             {titleAr && <span className="font-arabic text-xl text-muted-foreground">{titleAr}</span>}
           </div>
-          {description && <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed">{description}</p>}
+          {description && (
+            <p className="text-sm text-muted-foreground mt-1.5 max-w-2xl leading-relaxed">{description}</p>
+          )}
         </div>
       </div>
       <div className="ornament-line mt-4" />

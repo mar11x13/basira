@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/lib/store';
+import { useT, useUiLanguage } from '@/lib/i18n';
 import { ViewHeader } from '@/components/shared/view-header';
 import { TypeBadge } from '@/components/shared/source-card';
 import { Button } from '@/components/ui/button';
@@ -55,6 +56,9 @@ function BookmarkRow({ item, onRemoved }: { item: BookmarkItem; onRemoved: (slug
   const r = item.record;
   const openRecordBySlug = useApp((s) => s.openRecordBySlug);
   const toggleBookmark = useApp((s) => s.toggleBookmark);
+  const t = useT();
+  const lang = useUiLanguage();
+  const arabic = lang === 'ar';
   const [removing, setRemoving] = React.useState(false);
   const [justRemoved, setJustRemoved] = React.useState(false);
 
@@ -110,33 +114,33 @@ function BookmarkRow({ item, onRemoved }: { item: BookmarkItem; onRemoved: (slug
             <Button
               variant="outline"
               size="sm"
-              className="h-10 px-4"
+              className={cn('h-10 px-4', arabic && 'font-arabic')}
               onClick={() => void openRecordBySlug(r.slug)}
             >
-              <BookOpen className="h-4 w-4 mr-1.5" aria-hidden />
-              Inspect source
+              <BookOpen className="h-4 w-4 me-1.5" aria-hidden />
+              {t('common.inspectSource')}
             </Button>
             <Button
               variant="ghost"
               size="sm"
-              className="h-10 px-4 text-destructive hover:text-destructive"
+              className={cn('h-10 px-4 text-destructive hover:text-destructive', arabic && 'font-arabic')}
               onClick={() => void remove()}
               disabled={removing}
-              aria-label={`Remove ${r.citation} from bookmarks`}
+              aria-label={`${t('common.remove')} ${r.citation}`}
             >
               {removing ? (
                 <span className="animate-pulse" aria-hidden>
-                  Removing…
+                  {arabic ? 'جارٍ الإزالة…' : 'Removing…'}
                 </span>
               ) : (
                 <>
-                  <Trash2 className="h-4 w-4 mr-1.5" aria-hidden />
-                  Remove
+                  <Trash2 className="h-4 w-4 me-1.5" aria-hidden />
+                  {t('common.remove')}
                 </>
               )}
             </Button>
-            <span className="ml-auto text-[0.65rem] text-muted-foreground">
-              Saved {formatDate(item.createdAt)}
+            <span className="ms-auto text-[0.65rem] text-muted-foreground">
+              {t('common.savedOn')} {formatDate(item.createdAt)}
             </span>
           </div>
         </div>
@@ -147,32 +151,44 @@ function BookmarkRow({ item, onRemoved }: { item: BookmarkItem; onRemoved: (slug
 
 function EmptyLibrary({ hasItems }: { hasItems: boolean }) {
   const setView = useApp((s) => s.setView);
+  const lang = useUiLanguage();
+  const arabic = lang === 'ar';
   return (
-    <div className="text-center py-12 px-4">
+    <div className={cn('text-center py-12 px-4', arabic && 'font-arabic')}>
       <div className="mx-auto w-fit rounded-full bg-primary/8 p-4">
         <Bookmark className="h-9 w-9 text-primary/70" aria-hidden />
       </div>
-      <p className="mt-4 font-display text-lg font-semibold text-foreground/85">
-        {hasItems ? 'No bookmarks in this filter' : 'Your bookmark library is empty'}
+      <p className={cn('mt-4 text-lg font-semibold text-foreground/85', !arabic && 'font-display')}>
+        {hasItems
+          ? arabic
+            ? 'لا توجد محفوظات في هذا التصنيف'
+            : 'No bookmarks in this filter'
+          : arabic
+            ? 'مكتبة محفوظاتك فارغة'
+            : 'Your bookmark library is empty'}
       </p>
       <p className="text-sm text-muted-foreground mt-1.5 max-w-md mx-auto leading-relaxed">
         {hasItems
-          ? 'Try another type filter above to see the rest of your saved items.'
-          : 'Tap the bookmark icon on any verse, hadith, or dua to save it here. Everything you save keeps its full citation and verification status.'}
+          ? arabic
+            ? 'جرّب تصنيفًا آخر في الأعلى لرؤية بقية محفوظاتك.'
+            : 'Try another type filter above to see the rest of your saved items.'
+          : arabic
+            ? 'اضغط أيقونة الحفظ على أي آية أو حديث أو دعاء لتجدها هنا. كل ما تحفظه يبقى بمرجعه الكامل وحالة توثيقه.'
+            : 'Tap the bookmark icon on any verse, hadith, or dua to save it here. Everything you save keeps its full citation and verification status.'}
       </p>
       {!hasItems && (
         <div className="mt-5 flex items-center justify-center gap-2 flex-wrap">
           <Button variant="outline" className="h-11 px-5" onClick={() => setView('quran')}>
-            <BookOpen className="h-4 w-4 mr-2" aria-hidden />
-            Explore the Qur&apos;an
+            <BookOpen className="h-4 w-4 me-2" aria-hidden />
+            {arabic ? 'تصفّح القرآن' : 'Explore the Qur\u2019an'}
           </Button>
           <Button variant="outline" className="h-11 px-5" onClick={() => setView('hadith')}>
-            <ScrollText className="h-4 w-4 mr-2" aria-hidden />
-            Browse hadith
+            <ScrollText className="h-4 w-4 me-2" aria-hidden />
+            {arabic ? 'تصفّح الأحاديث' : 'Browse hadith'}
           </Button>
           <Button variant="outline" className="h-11 px-5" onClick={() => setView('dua')}>
-            <HandHeart className="h-4 w-4 mr-2" aria-hidden />
-            Find a dua
+            <HandHeart className="h-4 w-4 me-2" aria-hidden />
+            {arabic ? 'ابحث عن دعاء' : 'Find a dua'}
           </Button>
         </div>
       )}
@@ -184,6 +200,9 @@ export function BookmarksView() {
   const bookmarks = useApp((s) => s.bookmarks);
   const profile = useApp((s) => s.profile);
   const booted = useApp((s) => s.booted);
+  const t = useT();
+  const lang = useUiLanguage();
+  const arabic = lang === 'ar';
 
   // The store loads bookmarks on boot; while booting show skeletons so a
   // logged library never flashes as "empty" first.
@@ -209,26 +228,36 @@ export function BookmarksView() {
   return (
     <div>
       <ViewHeader
-        title="Bookmarks"
-        titleAr="المحفوظات"
-        description={`Your saved verses, hadith, duas and more — kept in this anonymous session${
-          profile?.displayName ? `, ${profile.displayName}` : ''
-        }. Every saved item keeps its citation and verification status.`}
+        title={arabic ? 'المحفوظات' : 'Bookmarks'}
+        titleAr={arabic ? undefined : 'المحفوظات'}
+        description={
+          arabic
+            ? 'آياتك وأحاديثك وأدعيتك المحفوظة — تُحفظ في هذه الجلسة المجهولة. كل عنصرٍ محفوظ يبقى بمرجعه وحالة توثيقه.'
+            : `Your saved verses, hadith, duas and more — kept in this anonymous session${
+                profile?.displayName ? `, ${profile.displayName}` : ''
+              }. Every saved item keeps its citation and verification status.`
+        }
       />
 
       {/* ——— Summary line ——— */}
-      <p className="text-sm text-muted-foreground mb-4" role="status" aria-live="polite">
+      <p className={cn('text-sm text-muted-foreground mb-4', arabic && 'font-arabic')} role="status" aria-live="polite">
         {booted && items.length > 0 ? (
-          <>
-            <span className="font-semibold text-foreground">{items.length}</span> saved{' '}
-            {items.length === 1 ? 'item' : 'items'}
-            {types.length > 1 && (
-              <>
-                {' '}
-                — {types.map(([t, n]) => `${n} ${SOURCE_TYPE_LABELS[t] ?? t}`).join(' · ')}
-              </>
-            )}
-          </>
+          arabic ? (
+            <>
+              <span className="font-semibold text-foreground">{items.length}</span> عنصر محفوظ
+            </>
+          ) : (
+            <>
+              <span className="font-semibold text-foreground">{items.length}</span> saved{' '}
+              {items.length === 1 ? 'item' : 'items'}
+              {types.length > 1 && (
+                <>
+                  {' '}
+                  — {types.map(([ty, n]) => `${n} ${SOURCE_TYPE_LABELS[ty] ?? ty}`).join(' · ')}
+                </>
+              )}
+            </>
+          )
         ) : booted && items.length === 0 ? null : (
           'Loading your bookmarks…'
         )}
@@ -294,9 +323,10 @@ export function BookmarksView() {
 
       {/* ——— Honest note ——— */}
       {items.length > 0 && (
-        <p className="mt-6 text-center text-[0.68rem] text-muted-foreground leading-relaxed max-w-md mx-auto">
-          Bookmarks live in this anonymous session only. Deleting your data in Settings (Privacy)
-          removes them permanently — nothing is shared or sold.
+        <p className={cn('mt-6 text-center text-[0.68rem] text-muted-foreground leading-relaxed max-w-md mx-auto', arabic && 'font-arabic')}>
+          {arabic
+            ? 'المحفوظات تُحفظ في هذه الجلسة المجهولة فقط. حذف بياناتك من الإعدادات (الخصوصية) يزيلها نهائيًا — لا شيء يُشارك ولا يُباع.'
+            : 'Bookmarks live in this anonymous session only. Deleting your data in Settings (Privacy) removes them permanently — nothing is shared or sold.'}
         </p>
       )}
     </div>

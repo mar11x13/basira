@@ -5,6 +5,7 @@ import { useApp } from '@/lib/store';
 import { ViewHeader } from '@/components/shared/view-header';
 import { useToast } from '@/hooks/use-toast';
 import { PRAYER_METHODS, getMethod } from '@/lib/prayer-times';
+import { LANGUAGE_OPTIONS, useUiLanguage, type UiLanguage } from '@/lib/i18n';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -151,6 +152,7 @@ export function SettingsView() {
   const deleteAllData = useApp((s) => s.deleteAllData);
   const setView = useApp((s) => s.setView);
   const { toast } = useToast();
+  const uiLang: UiLanguage = useUiLanguage();
 
   // ---- shared save helper: optimistic store update + toast ---------------
   const save = React.useCallback(
@@ -393,6 +395,49 @@ export function SettingsView() {
           description="How BASIRA presents sacred texts and explanations to you."
         >
           <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="language-select" className="text-sm font-medium flex items-center gap-2">
+                Interface language
+                <span className="font-arabic text-muted-foreground">لغة الواجهة</span>
+              </Label>
+              {booted ? (
+                <Select
+                  value={uiLang}
+                  onValueChange={(v) =>
+                    void save(
+                      { language: v },
+                      v === 'ar'
+                        ? 'تمّ تحويل الواجهة إلى العربية.'
+                        : v === 'bilingual'
+                          ? 'Bilingual mode — English with Arabic labels.'
+                          : 'Interface language set to English.'
+                    )
+                  }
+                >
+                  <SelectTrigger id="language-select" className="w-full h-11 rounded-xl bg-card">
+                    <SelectValue placeholder="Choose a language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {LANGUAGE_OPTIONS.map((o) => (
+                      <SelectItem key={o.value} value={o.value}>
+                        <span className="flex items-center justify-between gap-3 w-full">
+                          <span>{o.label}</span>
+                          <span className="text-muted-foreground font-arabic">{o.labelAr}</span>
+                        </span>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Skeleton className="h-11 w-full rounded-xl" />
+              )}
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                Arabic switches the whole interface to right-to-left Arabic — the content itself is always bilingual.
+              </p>
+            </div>
+
+            <Separator />
+
             <div className="space-y-2">
               <Label htmlFor="madhhab-select" className="text-sm font-medium">
                 Madhhab (school of thought)

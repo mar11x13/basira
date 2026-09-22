@@ -8,6 +8,7 @@ import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { RecordDialog } from '@/components/shared/record-dialog';
 import { useTheme } from 'next-themes';
+import { useT, navLabel, useUiLanguage, useDocumentDirection } from '@/lib/i18n';
 import {
   Home,
   BookOpen,
@@ -29,22 +30,24 @@ import {
   Menu,
   WifiOff,
   ChevronRight,
+  Languages,
 } from 'lucide-react';
 
-const NAV: { key: ViewKey; label: string; icon: React.ElementType; desc: string }[] = [
-  { key: 'home', label: 'Home', icon: Home, desc: 'Your daily Muslim companion' },
-  { key: 'quran', label: "Qur'an", icon: BookOpen, desc: 'Read, search, and reflect' },
-  { key: 'hadith', label: 'Hadith', icon: ScrollText, desc: 'Sahih al-Bukhari & more' },
-  { key: 'ask', label: 'Ask BASIRA', icon: Sparkles, desc: 'Grounded answers with sources' },
-  { key: 'dua', label: 'Dua', icon: HandHeart, desc: 'Supplications by situation' },
-  { key: 'dhikr', label: 'Dhikr', icon: Repeat, desc: 'Remembrance with counters' },
-  { key: 'salah', label: 'Salah', icon: MoonStar, desc: 'Learn to pray, step by step' },
-  { key: 'seerah', label: 'Seerah', icon: BookUser, desc: 'Life of the Prophet ﷺ' },
-  { key: 'calendar', label: 'Calendar', icon: CalendarDays, desc: 'Hijri dates & events' },
-  { key: 'learn', label: 'Learn', icon: GraduationCap, desc: 'Structured learning paths' },
-  { key: 'glossary', label: 'Glossary', icon: Library, desc: 'Islamic terms simplified' },
-  { key: 'bookmarks', label: 'Bookmarks', icon: Bookmark, desc: 'Your saved verses and hadith' },
-  { key: 'settings', label: 'Settings', icon: Settings, desc: 'Preferences & privacy' },
+// Nav items carry i18n KEYS (not strings) — resolved per language at render.
+const NAV: { key: ViewKey; labelKey: string; descKey: string; icon: React.ElementType }[] = [
+  { key: 'home', labelKey: 'nav.home', descKey: 'nav.home.desc', icon: Home },
+  { key: 'quran', labelKey: 'nav.quran', descKey: 'nav.quran.desc', icon: BookOpen },
+  { key: 'hadith', labelKey: 'nav.hadith', descKey: 'nav.hadith.desc', icon: ScrollText },
+  { key: 'ask', labelKey: 'nav.ask', descKey: 'nav.ask.desc', icon: Sparkles },
+  { key: 'dua', labelKey: 'nav.dua', descKey: 'nav.dua.desc', icon: HandHeart },
+  { key: 'dhikr', labelKey: 'nav.dhikr', descKey: 'nav.dhikr.desc', icon: Repeat },
+  { key: 'salah', labelKey: 'nav.salah', descKey: 'nav.salah.desc', icon: MoonStar },
+  { key: 'seerah', labelKey: 'nav.seerah', descKey: 'nav.seerah.desc', icon: BookUser },
+  { key: 'calendar', labelKey: 'nav.calendar', descKey: 'nav.calendar.desc', icon: CalendarDays },
+  { key: 'learn', labelKey: 'nav.learn', descKey: 'nav.learn.desc', icon: GraduationCap },
+  { key: 'glossary', labelKey: 'nav.glossary', descKey: 'nav.glossary.desc', icon: Library },
+  { key: 'bookmarks', labelKey: 'nav.bookmarks', descKey: 'nav.bookmarks.desc', icon: Bookmark },
+  { key: 'settings', labelKey: 'nav.settings', descKey: 'nav.settings.desc', icon: Settings },
 ];
 
 const BOTTOM_NAV: ViewKey[] = ['home', 'quran', 'ask', 'hadith'];
@@ -60,19 +63,22 @@ function NavButton({
   onClick: () => void;
   compact?: boolean;
 }) {
+  const lang = useUiLanguage();
+  const t = useT();
   const Icon = item.icon;
   return (
     <button
       onClick={onClick}
       className={cn(
         'w-full flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors focus-ring',
-        active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/80'
+        active ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-muted/80',
+        lang === 'ar' && 'text-start'
       )}
       aria-current={active ? 'page' : undefined}
     >
       <Icon className={cn('h-[1.15rem] w-[1.15rem] shrink-0', active && 'text-primary')} aria-hidden />
-      <span className="truncate">{item.label}</span>
-      {!compact && <ChevronRight className="ml-auto h-3.5 w-3.5 opacity-0 transition-opacity" aria-hidden />}
+      <span className="truncate">{navLabel(item.labelKey, lang)}</span>
+      {!compact && <ChevronRight className="ms-auto h-3.5 w-3.5 opacity-0 transition-opacity rtl:rotate-180" aria-hidden />}
     </button>
   );
 }
@@ -83,6 +89,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const online = useApp((s) => s.online);
   const bookmarkCount = useApp((s) => s.bookmarks.length);
   const { theme, setTheme } = useTheme();
+  const t = useT();
+  const lang = useUiLanguage();
+  const dir = useDocumentDirection();
   const [mounted, setMounted] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
 
@@ -102,28 +111,28 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const moreItems = NAV.filter((n) => !BOTTOM_NAV.includes(n.key));
 
   return (
-    <div className="min-h-screen flex flex-col bg-background">
+    <div dir={dir} className="min-h-screen flex flex-col bg-background">
       {/* ————— Desktop sidebar ————— */}
-      <aside className="hidden lg:flex fixed inset-y-0 left-0 w-64 flex-col border-r border-border/70 bg-sidebar z-40">
+      <aside className="hidden lg:flex fixed inset-y-0 start-0 w-64 flex-col border-e border-border/70 bg-sidebar z-40">
         <div className="px-5 pt-6 pb-4">
-          <button onClick={() => setView('home')} className="focus-ring rounded-lg" aria-label="BASIRA home">
+          <button onClick={() => setView('home')} className="focus-ring rounded-lg" aria-label={t('shell.home')}>
             <LogoWord />
           </button>
         </div>
-        <nav className="flex-1 overflow-y-auto scrollbar-soft px-3 pb-4 space-y-0.5" aria-label="Main navigation">
+        <nav className="flex-1 overflow-y-auto scrollbar-soft px-3 pb-4 space-y-0.5" aria-label={lang === 'ar' ? 'التنقل الرئيسي' : 'Main navigation'}>
           {NAV.map((item) => (
             <NavButton key={item.key} item={item} active={view === item.key} onClick={() => setView(item.key)} />
           ))}
           <NavButton
-            item={{ key: 'admin', label: 'Admin', icon: ShieldCheck, desc: 'Knowledge base review' }}
+            item={{ key: 'admin', labelKey: 'nav.admin', descKey: 'nav.admin.desc', icon: ShieldCheck }}
             active={view === 'admin'}
             onClick={() => setView('admin')}
           />
         </nav>
-        <div className="px-5 py-4 border-t border-border/60 text-[0.68rem] text-muted-foreground leading-relaxed">
-          Educational tool · not a fatwa service.
+        <div className="px-5 py-4 border-t border-border/60 text-[0.68rem] text-muted-foreground leading-relaxed text-start">
+          {t('shell.educationalTool')}
           <br />
-          Complex matters → qualified scholars.
+          {t('shell.complexMatters')}
         </div>
       </aside>
 
@@ -131,39 +140,41 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <header
         className={cn(
           'sticky top-0 z-30 bg-background/85 backdrop-blur-md border-b border-border/60',
-          'lg:pl-64'
+          'lg:ps-64'
         )}
       >
         <div className="max-w-4xl mx-auto px-4 sm:px-6 h-14 flex items-center gap-3">
           {/* mobile logo */}
-          <button onClick={() => setView('home')} className="lg:hidden focus-ring rounded-lg" aria-label="BASIRA home">
+          <button onClick={() => setView('home')} className="lg:hidden focus-ring rounded-lg" aria-label={t('shell.home')}>
             <LogoWord />
           </button>
 
           <div className="hidden lg:block">
-            <p className="text-sm font-semibold text-foreground">{activeItem?.label ?? 'BASIRA'}</p>
-            <p className="text-xs text-muted-foreground">{activeItem?.desc}</p>
+            <p className="text-sm font-semibold text-foreground">
+              {activeItem ? navLabel(activeItem.labelKey, lang) : 'BASIRA'}
+            </p>
+            <p className="text-xs text-muted-foreground">{activeItem ? t(activeItem.descKey) : ''}</p>
           </div>
 
-          <div className="ml-auto flex items-center gap-1.5">
+          <div className="ms-auto flex items-center gap-1.5">
             {!online && (
               <span className="flex items-center gap-1.5 text-xs text-gold font-medium px-2.5 py-1.5 rounded-full bg-gold/10 border border-gold/30">
                 <WifiOff className="h-3.5 w-3.5" aria-hidden />
-                <span className="hidden sm:inline">Offline — cached content</span>
-                <span className="sm:hidden">Offline</span>
+                <span className="hidden sm:inline">{t('shell.offline')}</span>
+                <span className="sm:hidden">{t('shell.offlineShort')}</span>
               </span>
             )}
             <Button
               variant="ghost"
               size="icon"
               onClick={() => setView('bookmarks')}
-              aria-label={`Bookmarks${bookmarkCount > 0 ? ` — ${bookmarkCount} saved` : ''}`}
+              aria-label={`${t('shell.bookmarks')}${bookmarkCount > 0 ? ` — ${bookmarkCount} ${t('shell.bookmarksSaved')}` : ''}`}
               className="relative text-muted-foreground hover:text-foreground"
             >
               <Bookmark className="h-[1.15rem] w-[1.15rem]" />
               {bookmarkCount > 0 && (
                 <span
-                  className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold text-gold-foreground text-[0.58rem] font-bold px-1 tabular-nums"
+                  className="absolute -top-0.5 -end-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold text-gold-foreground text-[0.58rem] font-bold px-1 tabular-nums"
                   aria-hidden
                 >
                   {bookmarkCount > 99 ? '99+' : bookmarkCount}
@@ -173,8 +184,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => {
+                const next = lang === 'en' ? 'ar' : lang === 'ar' ? 'bilingual' : 'en';
+                void useApp.getState().updateProfile({ language: next });
+              }}
+              aria-label={
+                lang === 'ar'
+                  ? 'تبديل لغة الواجهة'
+                  : lang === 'bilingual'
+                    ? 'Switch interface language (currently bilingual)'
+                    : 'Switch interface language (currently English)'
+              }
+              title="English · العربية · ثنائي"
+              className="relative text-muted-foreground hover:text-foreground"
+            >
+              <Languages className="h-[1.15rem] w-[1.15rem]" />
+              {lang !== 'en' && (
+                <span
+                  className="absolute -bottom-0.5 -end-0.5 rounded-full bg-primary text-primary-foreground text-[0.5rem] font-bold px-1 leading-[0.9rem]"
+                  aria-hidden
+                >
+                  {lang === 'ar' ? 'ع' : 'EN+ع'}
+                </span>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setView('search')}
-              aria-label="Search BASIRA"
+              aria-label={t('shell.search')}
               className="text-muted-foreground hover:text-foreground"
             >
               <Search className="h-[1.15rem] w-[1.15rem]" />
@@ -183,7 +221,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               variant="ghost"
               size="icon"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-              aria-label="Toggle dark mode"
+              aria-label={lang === 'ar' ? 'تبديل الوضع الليلي' : 'Toggle dark mode'}
               className="text-muted-foreground hover:text-foreground"
             >
               {mounted && theme === 'dark' ? <Sun className="h-[1.15rem] w-[1.15rem]" /> : <Moon className="h-[1.15rem] w-[1.15rem]" />}
@@ -193,7 +231,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </header>
 
       {/* ————— Main ————— */}
-      <main className="flex-1 lg:pl-64">
+      <main className="flex-1 lg:ps-64">
         {/* key={view} replays a gentle entrance transition on every section switch */}
         <div
           key={view}
@@ -204,26 +242,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
 
       {/* ————— Footer (sticky to bottom, pushed naturally on overflow) ————— */}
-      <footer className="mt-auto lg:pl-64 border-t border-border/60 bg-card/60">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-5 text-center lg:text-left">
+      <footer className="mt-auto lg:ps-64 border-t border-border/60 bg-card/60">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-5 text-center lg:text-start">
           <p className="text-xs text-muted-foreground leading-relaxed max-w-3xl mx-auto lg:mx-0">
-            <span className="font-semibold text-foreground/70">BASIRA</span> is an educational Islamic guidance tool.
-            It is not Allah, not the Prophet Muhammad ﷺ, and not a scholar — and never speaks as any of them.
-            Answers are grounded in a curated source database (Qur&apos;an; Sahih al-Bukhari and other authentic
-            collections) with citations you can inspect. For rulings on your personal circumstances — marriage,
-            divorce, inheritance, finance, abuse, or medical matters — please consult a qualified scholar.
+            {t('footer.line1')}
           </p>
-          <p className="text-[0.65rem] text-muted-foreground/70 mt-2.5">
-            Hadith numbering follows the widely used English edition (Darussalam / sunnah.com) and may differ in other editions.
-            Translations: BASIRA Simple English rendering (public domain) · Full Qur&apos;an reading: Pickthall (1930, public domain) via alquran.cloud integration.
-          </p>
+          <p className="text-[0.65rem] text-muted-foreground/70 mt-2.5">{t('footer.line2')}</p>
         </div>
       </footer>
 
       {/* ————— Mobile bottom navigation ————— */}
       <nav
         className="lg:hidden fixed bottom-0 inset-x-0 z-40 bg-background/92 backdrop-blur-md border-t border-border/60 pb-[env(safe-area-inset-bottom)]"
-        aria-label="Bottom navigation"
+        aria-label={lang === 'ar' ? 'التنقل السفلي' : 'Bottom navigation'}
       >
         <div className="grid grid-cols-5 h-16 items-stretch">
           {BOTTOM_NAV.map((key) => {
@@ -240,7 +271,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   active ? 'text-primary' : 'text-muted-foreground'
                 )}
                 aria-current={active ? 'page' : undefined}
-                aria-label={item.label}
+                aria-label={navLabel(item.labelKey, lang)}
               >
                 {center ? (
                   <span
@@ -254,7 +285,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 ) : (
                   <Icon className="h-[1.2rem] w-[1.2rem]" aria-hidden />
                 )}
-                <span className={cn(center && 'mt-0.5')}>{item.label}</span>
+                <span className={cn(center && 'mt-0.5')}>{navLabel(item.labelKey, lang)}</span>
               </button>
             );
           })}
@@ -267,15 +298,17 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   'flex flex-col items-center justify-center gap-1 text-[0.62rem] font-medium transition-colors focus-ring',
                   moreItems.some((m) => m.key === view) ? 'text-primary' : 'text-muted-foreground'
                 )}
-                aria-label="More sections"
+                aria-label={lang === 'ar' ? 'أقسام أكثر' : 'More sections'}
               >
                 <Menu className="h-[1.2rem] w-[1.2rem]" aria-hidden />
-                More
+                {t('nav.more')}
               </button>
             </SheetTrigger>
             <SheetContent side="bottom" className="rounded-t-2xl pb-[env(safe-area-inset-bottom)]">
               <SheetHeader className="pb-2">
-                <SheetTitle className="font-display text-left">Explore BASIRA</SheetTitle>
+                <SheetTitle className={cn('font-display', lang === 'ar' ? 'text-start font-arabic' : 'text-left')}>
+                  {t('nav.exploreSheet')}
+                </SheetTitle>
               </SheetHeader>
               <div className="grid grid-cols-2 gap-2 px-4 pb-6">
                 {moreItems.map((item) => (
@@ -291,7 +324,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                   />
                 ))}
                 <NavButton
-                  item={{ key: 'admin', label: 'Admin', icon: ShieldCheck, desc: '' }}
+                  item={{ key: 'admin', labelKey: 'nav.admin', descKey: 'nav.admin.desc', icon: ShieldCheck }}
                   compact
                   active={view === 'admin'}
                   onClick={() => {
