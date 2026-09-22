@@ -22,6 +22,7 @@ import {
   ChevronRight,
   Clock,
   MapPin,
+  Bookmark,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -35,6 +36,8 @@ const QUICK_ACTIONS = [
   { key: 'calendar', label: 'Calendar', icon: CalendarDays },
   { key: 'learn', label: 'Learn', icon: GraduationCap },
 ] as const;
+
+const MORE_ACTIONS = [{ key: 'bookmarks', label: 'Bookmarks', icon: Bookmark }] as const;
 
 function greeting(): { salam: string; sub: string } {
   const h = new Date().getHours();
@@ -67,6 +70,18 @@ function PrayerStrip() {
     const t = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(t);
   }, []);
+
+  // Time-aware cell styling: passed prayers rest dimmed, the next prayer glows.
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const minutesOf = (label: string) => {
+    const m = label.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
+    if (!m) return null;
+    let h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12;
+    if (m[3].toUpperCase() === 'AM' && h === 12) h = 0;
+    return h * 60 + min;
+  };
 
   return (
     <Card className="paper-card overflow-hidden border-border/80">
@@ -109,13 +124,20 @@ function PrayerStrip() {
           {PRAYER_ORDER.map((k) => {
             const isNext = next?.key === k && !next.tomorrow;
             const isInfo = k === 'sunrise';
+            const mins = minutesOf(times[k]);
+            const hasPassed = !isNext && mins != null && mins <= nowMinutes;
             return (
               <div
                 key={k}
                 role="listitem"
                 className={cn(
-                  'rounded-lg py-1.5 px-0.5 transition-colors',
-                  isNext ? 'bg-primary text-primary-foreground shadow-sm' : isInfo ? 'bg-muted/40' : 'bg-muted/70'
+                  'rounded-lg py-1.5 px-0.5 transition-all duration-500',
+                  isNext
+                    ? 'bg-primary text-primary-foreground shadow-md scale-[1.03]'
+                    : isInfo
+                      ? 'bg-muted/40'
+                      : 'bg-muted/70',
+                  hasPassed && !isInfo && 'opacity-55'
                 )}
               >
                 <p className={cn('text-[0.6rem] font-semibold uppercase tracking-wide', isNext ? 'text-primary-foreground/90' : 'text-muted-foreground')}>
@@ -273,6 +295,23 @@ export function HomeView() {
             </button>
           ))}
         </div>
+        {MORE_ACTIONS.length > 0 && (
+          <div className="mt-2.5 grid grid-cols-4 gap-2.5">
+            {MORE_ACTIONS.map(({ key, label, icon: Icon }) => (
+              <button
+                key={key}
+                onClick={() => setView(key)}
+                className="group flex flex-col items-center gap-2 rounded-xl border border-gold/40 bg-gold/8 p-3 hover:border-gold/60 hover:shadow-sm transition-all focus-ring"
+                aria-label={label}
+              >
+                <span className="flex h-9 w-9 items-center justify-center rounded-full bg-gold/15 text-gold group-hover:bg-gold/25 transition-colors">
+                  <Icon className="h-[1.1rem] w-[1.1rem]" aria-hidden />
+                </span>
+                <span className="text-[0.7rem] font-medium text-foreground/85">{label}</span>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
 
       {/* ————— Continue reading + recent questions ————— */}

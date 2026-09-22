@@ -793,4 +793,47 @@ export const HADITH_SEED: SeedRecord[] = [
     explanation: 'The Isra (night journey to Jerusalem) is Qur\'anic (17:1); the Miʿraj (ascension through the heavens) is detailed in Bukhari and Muslim. From it Muslims received the gift of the five daily prayers. BASIRA notes the number varies by narration location.',
     topics: 'seerah, isra miraj, prayer, prophet, night journey', keywords: 'buraq, jerusalem, heavens, ascension, mi\'raj, isra', ...P,
   },
+
+  // ————— Character & manners (famous references, added 2026-09) —————
+  {
+    slug: 'hadith-bukhari-10', title: 'The Muslim is the one people are safe from',
+    collection: BK, book: 'Book of Belief (Kitab al-Iman)', hadithNumber: 10, narrator: 'Abdullah ibn Amr',
+    arabicText: '«الْمُسْلِمُ مَنْ سَلِمَ الْمُسْلِمُونَ مِنْ لِسَانِهِ وَيَدِهِ»',
+    englishText: 'The Muslim is the one from whose tongue and hand the Muslims are safe.',
+    explanation: 'One of the most concise definitions of a Muslim in the Sunnah: not merely a label or a birthright, but a person others are safe from — no harm in speech, no harm in action. Early scholars read "the Muslims" broadly as "the people" in some narrations of Muslim, extending the circle of safety.',
+    topics: 'manners, speech, harm, kindness, faith, character', keywords: 'muslim, tongue, hand, safe, harm, definition', ...H,
+  },
+  {
+    slug: 'hadith-muslim-223', title: 'Purity is half of faith',
+    collection: MU, book: 'Book of Mosques (Kitab al-Masajid)', hadithNumber: 223, narrator: 'Abu Malik al-Ash\'ari',
+    arabicText: '«الطُّهُورُ شَطْرُ الإِيمَانِ»',
+    englishText: 'Purity is half of faith.',
+    explanation: 'The opening words of a longer hadith in which the Prophet ﷺ also said "Alhamdulillah fills the scale". Scholars explain that purification (taharah) is the gateway of worship: no prayer is valid without it, so it is described as half of faith\'s practice. Physical cleanliness mirrors the inner purity of intention.',
+    topics: 'purity, wudu, faith, cleanliness', keywords: 'purity, taharah, clean, half, iman', ...H,
+  },
+  {
+    slug: 'hadith-muslim-2664', title: 'The strong believer',
+    collection: MU, book: 'Book of Divine Decree (Kitab al-Qadar)', hadithNumber: 2664, narrator: 'Abu Huraira',
+    arabicText: '«الْمُؤْمِنُ الْقَوِيُّ خَيْرٌ وَأَحَبُّ إِلَى اللَّهِ مِنَ الْمُؤْمِنِ الضَّعِيفِ، وَفِي كُلٍّ خَيْرٌ»',
+    englishText: 'The strong believer is better and more beloved to Allah than the weak believer — while there is good in both.',
+    explanation: 'Strength here is read as strength of faith and character as well as physical ability. The closing words matter: "in both is good" — the hadith honors effort and never mocks weakness. The Prophet ﷺ then taught: "Be eager for what benefits you, seek help from Allah, and do not be helpless."',
+    topics: 'strength, faith, effort, determination, anxiety', keywords: 'strong, weak, believer, resolve, help', ...H,
+  },
+  {
+    slug: 'hadith-muslim-2594', title: 'Gentleness beautifies everything',
+    collection: MU, book: 'Book of Good Manners (Kitab al-Birr)', hadithNumber: 2594, narrator: 'Aisha',
+    arabicText: '«إِنَّ الرِّفْقَ لاَ يَكُونُ فِي شَيْءٍ إِلاَّ زَانَهُ، وَلاَ يُنْزَعُ مِنْ شَيْءٍ إِلاَّ شَانَهُ»',
+    englishText: 'Gentleness is not present in anything without beautifying it, and it is not removed from anything without disfiguring it.',
+    explanation: 'Aisha reported that the Prophet ﷺ said this about an incident where two men were harsh with a Bedouin. Rifq (gentleness, kindness in approach) is a mark of prophetic character: it adorns matters of worship, family, teaching, and leadership — and its absence ruins them.',
+    topics: 'gentleness, kindness, manners, character, mercy', keywords: 'gentle, rifaq, kindness, harsh, soft', ...H,
+  },
+  {
+    slug: 'hadith-tirmidhi-1162', title: 'The most complete believers have the best character',
+    collection: TM, book: 'Book of Righteousness (Kitab al-Birr)', hadithNumber: 1162, grade: 'Hasan Sahih (sound)',
+    narrator: 'Abu Huraira',
+    arabicText: '«أَكْمَلُ الْمُؤْمِنِينَ إِيمَانًا أَحْسَنُهُمْ خُلُقًا»',
+    englishText: 'The most complete of the believers in faith are those with the best character.',
+    explanation: 'Faith (iman) is measured here by character (khuluq) — how one treats family, neighbors, strangers, and even animals. A parallel report adds: "…and the best of you are those best to their womenfolk." Character is the outward proof of inward belief.',
+    topics: 'character, manners, faith, family, kindness', keywords: 'complete, believer, character, khuluq, best', ...H,
+  },
 ];

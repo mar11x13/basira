@@ -15,6 +15,7 @@ import { SeerahView } from '@/components/views/seerah-view';
 import { CalendarView } from '@/components/views/calendar-view';
 import { LearnView } from '@/components/views/learn-view';
 import { GlossaryView } from '@/components/views/glossary-view';
+import { BookmarksView } from '@/components/views/bookmarks-view';
 import { SearchView } from '@/components/views/search-view';
 import { SettingsView } from '@/components/views/settings-view';
 import { AdminView } from '@/components/views/admin-view';
@@ -41,6 +42,7 @@ export default function Page() {
       {view === 'calendar' && <CalendarView />}
       {view === 'learn' && <LearnView />}
       {view === 'glossary' && <GlossaryView />}
+      {view === 'bookmarks' && <BookmarksView />}
       {view === 'search' && <SearchView />}
       {view === 'settings' && <SettingsView />}
       {view === 'admin' && <AdminView />}

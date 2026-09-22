@@ -20,6 +20,7 @@ import {
   CalendarDays,
   GraduationCap,
   Library,
+  Bookmark,
   Search,
   Settings,
   ShieldCheck,
@@ -42,6 +43,7 @@ const NAV: { key: ViewKey; label: string; icon: React.ElementType; desc: string 
   { key: 'calendar', label: 'Calendar', icon: CalendarDays, desc: 'Hijri dates & events' },
   { key: 'learn', label: 'Learn', icon: GraduationCap, desc: 'Structured learning paths' },
   { key: 'glossary', label: 'Glossary', icon: Library, desc: 'Islamic terms simplified' },
+  { key: 'bookmarks', label: 'Bookmarks', icon: Bookmark, desc: 'Your saved verses and hadith' },
   { key: 'settings', label: 'Settings', icon: Settings, desc: 'Preferences & privacy' },
 ];
 
@@ -79,6 +81,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const view = useApp((s) => s.view);
   const setView = useApp((s) => s.setView);
   const online = useApp((s) => s.online);
+  const bookmarkCount = useApp((s) => s.bookmarks.length);
   const { theme, setTheme } = useTheme();
   const [mounted, setMounted] = React.useState(false);
   const [moreOpen, setMoreOpen] = React.useState(false);
@@ -153,6 +156,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Button
               variant="ghost"
               size="icon"
+              onClick={() => setView('bookmarks')}
+              aria-label={`Bookmarks${bookmarkCount > 0 ? ` — ${bookmarkCount} saved` : ''}`}
+              className="relative text-muted-foreground hover:text-foreground"
+            >
+              <Bookmark className="h-[1.15rem] w-[1.15rem]" />
+              {bookmarkCount > 0 && (
+                <span
+                  className="absolute -top-0.5 -right-0.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-gold text-gold-foreground text-[0.58rem] font-bold px-1 tabular-nums"
+                  aria-hidden
+                >
+                  {bookmarkCount > 99 ? '99+' : bookmarkCount}
+                </span>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
               onClick={() => setView('search')}
               aria-label="Search BASIRA"
               className="text-muted-foreground hover:text-foreground"
@@ -174,7 +194,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
       {/* ————— Main ————— */}
       <main className="flex-1 lg:pl-64">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 pb-32 lg:pb-16 w-full">{children}</div>
+        {/* key={view} replays a gentle entrance transition on every section switch */}
+        <div
+          key={view}
+          className="max-w-4xl mx-auto px-4 sm:px-6 pt-6 pb-32 lg:pb-16 w-full animate-in fade-in slide-in-from-bottom-2 duration-300"
+        >
+          {children}
+        </div>
       </main>
 
       {/* ————— Footer (sticky to bottom, pushed naturally on overflow) ————— */}

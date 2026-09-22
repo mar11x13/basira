@@ -21,6 +21,7 @@ export type ViewKey =
   | 'calendar'
   | 'learn'
   | 'glossary'
+  | 'bookmarks'
   | 'search'
   | 'settings'
   | 'admin';
@@ -187,13 +188,21 @@ export const useApp = create<AppState>((set, get) => ({
       });
       if (res.ok) {
         const data = await res.json();
-        if (!data.removed && data.id && record) {
-          set((s) => ({
-            bookmarks: [
-              { id: data.id, createdAt: new Date().toISOString(), note: null, record },
-              ...s.bookmarks.filter((b) => b.record.slug !== recordIdOrSlug),
-            ],
-          }));
+        if (!data.removed && data.id) {
+          if (record) {
+            // fast path: we already hold the record — add it locally
+            set((s) => ({
+              bookmarks: [
+                { id: data.id, createdAt: new Date().toISOString(), note: null, record },
+                ...s.bookmarks.filter((b) => b.record.slug !== recordIdOrSlug),
+              ],
+            }));
+          } else {
+            // record not cached (new bookmark toggled from a rendered card):
+            // re-sync the whole list from the server so the count and the
+            // bookmarks view stay truthful.
+            await get().loadBookmarks();
+          }
         } else if (data.removed) {
           set((s) => ({ bookmarks: s.bookmarks.filter((b) => b.record.slug !== recordIdOrSlug) }));
         }

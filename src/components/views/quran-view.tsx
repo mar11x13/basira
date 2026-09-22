@@ -6,7 +6,7 @@ import { useApp } from '@/lib/store';
 import { SourceCard } from '@/components/shared/source-card';
 import { ArabicText } from '@/components/shared/arabic-text';
 import { ViewHeader, SearchBar, EmptyState } from '@/components/shared/view-header';
-import { SURAHS, getSurah, QURAN_INTEGRATION_NOTE, type SurahMeta } from '@/lib/surahs';
+import { SURAHS, getSurah, QURAN_INTEGRATION_NOTE, ayahAudioUrl, RECITER_NOTE, type SurahMeta } from '@/lib/surahs';
 import { useToast } from '@/hooks/use-toast';
 import type { SourceRecord } from '@/lib/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -22,12 +22,17 @@ import {
   BookmarkCheck,
   ChevronLeft,
   CloudOff,
+  Headphones,
   Info,
   Loader2,
+  Pause,
+  Play,
   RefreshCw,
   Search,
   SearchX,
+  Square,
   Tags,
+  Volume2,
 } from 'lucide-react';
 
 // ============================================================================
@@ -252,6 +257,27 @@ const STATUS_LABEL: Record<SurahStatus, string> = {
   'local-curated': 'Curated ayahs only',
 };
 
+// —————————————————————————————————————————————————————————————————
+// Surah reader · audio recitation ——————————————————————————————
+// One shared <audio> element per reader module: the Quran reader is the
+// only place that recites, and a single element guarantees overlapping
+// ayahs can never play at once. Held at module scope (not in a ref) so it
+// is a plain singleton, outside React's render data flow.
+// —————————————————————————————————————————————————————————————————
+
+let readerAudioEl: HTMLAudioElement | null = null;
+function getReaderAudio(): HTMLAudioElement {
+  if (!readerAudioEl) readerAudioEl = new Audio();
+  return readerAudioEl;
+}
+
+function stopReaderAudio() {
+  if (!readerAudioEl) return;
+  readerAudioEl.pause();
+  readerAudioEl.removeAttribute('src');
+  readerAudioEl.load();
+}
+
 function SurahReader({
   surahNumber,
   lastRead,
@@ -272,6 +298,120 @@ function SurahReader({
   const [state, setState] = React.useState<'loading' | 'ready' | 'error'>('loading');
   const [reloadTick, setReloadTick] = React.useState(0);
   const [marking, setMarking] = React.useState<number | null>(null);
+
+  // ————— Audio recitation state (mirrors the shared <audio> element) —————
+  const audioCurrentRef = React.useRef<number | null>(null);
+  const [audioCurrent, setAudioCurrent] = React.useState<number | null>(null);
+  const [audioPlaying, setAudioPlaying] = React.useState(false);
+  const [audioLoading, setAudioLoading] = React.useState(false);
+
+  const setAudio = (ayah: number | null) => {
+    audioCurrentRef.current = ayah;
+    setAudioCurrent(ayah);
+  };
+
+  const stopAudio = React.useCallback(() => {
+    stopReaderAudio();
+    audioCurrentRef.current = null;
+    setAudioCurrent(null);
+    setAudioPlaying(false);
+    setAudioLoading(false);
+  }, []);
+
+  const playAyah = React.useCallback(
+    (ayah: number) => {
+      const url = ayahAudioUrl(surahNumber, ayah);
+      if (!url) {
+        toast({
+          title: 'Recitation unavailable for this ayah',
+          description: 'BASIRA could not resolve a recitation reference, so no audio will play rather than a wrong one.',
+        });
+        return;
+      }
+      const el = getReaderAudio();
+      setAudio(ayah);
+      setAudioLoading(true);
+      el.src = url;
+      const played = el.play();
+      if (played) {
+        played
+          .then(() => setAudioPlaying(true))
+          .catch(() => setAudioPlaying(true)) // autoplay of direct .play() after user gesture resolves
+          .finally(() => setAudioLoading(false));
+      } else {
+        setAudioLoading(false);
+      }
+    },
+    [surahNumber, toast]
+  );
+
+  const toggleAudio = () => {
+    const el = readerAudioEl;
+    if (!el || audioCurrent == null) return;
+    if (el.paused) {
+      void el.play().then(() => setAudioPlaying(true));
+    } else {
+      el.pause();
+      setAudioPlaying(false);
+    }
+  };
+
+  // Auto-advance to the next ayah when one finishes; stop at the surah's end.
+  React.useEffect(() => {
+    const el = getReaderAudio();
+    const onEnded = () => {
+      const cur = audioCurrentRef.current;
+      if (cur == null || !data) {
+        setAudioPlaying(false);
+        return;
+      }
+      const idx = data.ayahs.findIndex((a) => a.numberInSurah === cur);
+      const next = idx >= 0 ? data.ayahs[idx + 1] : undefined;
+      if (next) {
+        const url = ayahAudioUrl(surahNumber, next.numberInSurah);
+        if (url) {
+          setAudio(next.numberInSurah);
+          el.src = url;
+          void el.play().catch(() => undefined);
+          return;
+        }
+      }
+      // end of surah → stop cleanly
+      el.pause();
+      el.removeAttribute('src');
+      setAudio(null);
+      setAudioPlaying(false);
+    };
+    const onError = () => {
+      setAudioPlaying(false);
+      setAudio(null);
+      toast({
+        title: 'Recitation could not be loaded',
+        description: 'The external audio service could not be reached — no audio plays rather than a wrong recitation. You can still read the ayah.',
+      });
+    };
+    el.addEventListener('ended', onEnded);
+    el.addEventListener('error', onError);
+    return () => {
+      el.removeEventListener('ended', onEnded);
+      el.removeEventListener('error', onError);
+    };
+  }, [data, surahNumber, toast]);
+
+  // Scroll the playing ayah into view as it advances.
+  React.useEffect(() => {
+    if (audioCurrent == null) return;
+    const target = document.getElementById(`ayah-${surahNumber}-${audioCurrent}`);
+    if (target) {
+      requestAnimationFrame(() => target.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+    }
+  }, [audioCurrent, surahNumber]);
+
+  // Stop audio when leaving the reader / switching surahs.
+  React.useEffect(() => {
+    stopAudio();
+    return stopAudio;
+  }, [stopAudio, surahNumber]);
 
   React.useEffect(() => {
     let alive = true;
@@ -331,7 +471,7 @@ function SurahReader({
   return (
     <section aria-label={`Surah ${surahNumber} reader`}>
       {/* Reader toolbar */}
-      <div className="flex items-center justify-between gap-2 mb-4">
+      <div className="flex items-center justify-between gap-2 mb-4 flex-wrap">
         <Button
           variant="ghost"
           onClick={onBack}
@@ -341,12 +481,30 @@ function SurahReader({
           <ChevronLeft className="h-5 w-5 mr-1" aria-hidden />
           All surahs
         </Button>
-        {typeof lastRead === 'number' && (
-          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 border border-border/60 rounded-full px-3 py-2">
-            <BookmarkCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
-            Last read: ayah {lastRead}
-          </span>
-        )}
+        <div className="flex items-center gap-2 flex-wrap">
+          {typeof lastRead === 'number' && (
+            <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 border border-border/60 rounded-full px-3 py-2">
+              <BookmarkCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
+              Last read: ayah {lastRead}
+            </span>
+          )}
+          {state === 'ready' && data && data.ayahs.length > 0 && (
+            <Button
+              variant={audioCurrent != null ? 'default' : 'outline'}
+              size="sm"
+              className="h-11 px-4"
+              onClick={() => (audioCurrent != null ? toggleAudio() : playAyah(data.ayahs[0]?.numberInSurah ?? 1))}
+              aria-label={audioCurrent != null ? 'Pause the recitation' : `Listen to ${surahMeta?.transliteration ?? 'this surah'} — recitation by Mishary Rashid Alafasy`}
+            >
+              {audioCurrent != null && audioPlaying ? (
+                <Pause className="h-4 w-4 mr-1.5" aria-hidden />
+              ) : (
+                <Headphones className="h-4 w-4 mr-1.5" aria-hidden />
+              )}
+              {audioCurrent != null ? (audioPlaying ? 'Pause recitation' : 'Resume') : 'Listen'}
+            </Button>
+          )}
+        </div>
       </div>
 
       {state === 'loading' && (
@@ -402,6 +560,7 @@ function SurahReader({
                 Translation: {data.translationSource}
                 {data.source ? ` · ${data.source}` : ''}
               </p>
+              <p className="text-[0.62rem] text-muted-foreground/80 mt-1.5 leading-relaxed max-w-xl mx-auto">{RECITER_NOTE}</p>
             </CardContent>
           </Card>
 
@@ -424,44 +583,89 @@ function SurahReader({
               {data.ayahs.map((a) => {
                 const isLastRead = lastRead === a.numberInSurah;
                 const bookmarked = a.slug ? bookmarkSlugs.has(a.slug) : false;
+                const isPlayingAyah = audioCurrent === a.numberInSurah;
                 return (
                   <article
                     key={a.numberInSurah}
                     id={`ayah-${surahNumber}-${a.numberInSurah}`}
                     className={cn(
-                      'paper-card rounded-xl border p-4 sm:p-5 transition-shadow',
-                      isLastRead ? 'border-primary/50 shadow-md' : 'border-border/80 shadow-sm hover:shadow-md'
+                      'paper-card rounded-xl border p-4 sm:p-5 transition-all duration-300',
+                      isPlayingAyah
+                        ? 'border-primary/60 shadow-lg ring-1 ring-primary/30'
+                        : isLastRead
+                          ? 'border-primary/50 shadow-md'
+                          : 'border-border/80 shadow-sm hover:shadow-md'
                     )}
                   >
-                    <div className="flex items-center justify-between gap-2">
-                      <span
-                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold tabular-nums border border-primary/25"
-                        aria-hidden
-                      >
-                        {a.numberInSurah}
+                    <div className="flex items-center justify-between gap-2 flex-wrap">
+                      <span className="flex items-center gap-2 min-w-0">
+                        <span
+                          className={cn(
+                            'flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-xs font-bold tabular-nums border transition-colors',
+                            isPlayingAyah
+                              ? 'bg-primary text-primary-foreground border-primary'
+                              : 'bg-primary/10 text-primary border-primary/25'
+                          )}
+                          aria-hidden
+                        >
+                          {a.numberInSurah}
+                        </span>
+                        {isPlayingAyah && (
+                          <span className="flex items-center gap-1 text-[0.65rem] font-semibold text-primary uppercase tracking-wide" aria-hidden>
+                            <Volume2 className="h-3.5 w-3.5" />
+                            {audioLoading ? 'Loading…' : audioPlaying ? 'Reciting' : 'Paused'}
+                          </span>
+                        )}
                       </span>
                       <span className="sr-only">Ayah {a.numberInSurah}</span>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        onClick={() => void markLastRead(a.numberInSurah)}
-                        disabled={marking !== null}
-                        className={cn(
-                          'h-11 px-3 text-xs',
-                          isLastRead ? 'text-primary hover:text-primary' : 'text-muted-foreground hover:text-foreground'
-                        )}
-                        aria-label={`Set ayah ${a.numberInSurah} as your last read position`}
-                      >
-                        {marking === a.numberInSurah ? (
-                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" aria-hidden />
-                        ) : (
-                          <BookmarkCheck
-                            className={cn('h-4 w-4 mr-1.5', isLastRead && 'fill-primary/20')}
-                            aria-hidden
-                          />
-                        )}
-                        {isLastRead ? 'Last read' : 'Set as last read'}
-                      </Button>
+                      <div className="flex items-center gap-1">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => (isPlayingAyah ? toggleAudio() : playAyah(a.numberInSurah))}
+                          className={cn(
+                            'h-11 w-11 p-0',
+                            isPlayingAyah ? 'text-primary hover:text-primary' : 'text-muted-foreground hover:text-foreground'
+                          )}
+                          aria-label={
+                            isPlayingAyah
+                              ? audioPlaying
+                                ? `Pause recitation of ayah ${a.numberInSurah}`
+                                : `Resume recitation of ayah ${a.numberInSurah}`
+                              : `Play recitation of ayah ${a.numberInSurah} — Mishary Rashid Alafasy`
+                          }
+                        >
+                          {isPlayingAyah && audioLoading ? (
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+                          ) : isPlayingAyah && audioPlaying ? (
+                            <Pause className="h-4 w-4" aria-hidden />
+                          ) : (
+                            <Play className="h-4 w-4" aria-hidden />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => void markLastRead(a.numberInSurah)}
+                          disabled={marking !== null}
+                          className={cn(
+                            'h-11 px-3 text-xs',
+                            isLastRead ? 'text-primary hover:text-primary' : 'text-muted-foreground hover:text-foreground'
+                          )}
+                          aria-label={`Set ayah ${a.numberInSurah} as your last read position`}
+                        >
+                          {marking === a.numberInSurah ? (
+                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" aria-hidden />
+                          ) : (
+                            <BookmarkCheck
+                              className={cn('h-4 w-4 mr-1.5', isLastRead && 'fill-primary/20')}
+                              aria-hidden
+                            />
+                          )}
+                          <span className="hidden sm:inline">{isLastRead ? 'Last read' : 'Set as last read'}</span>
+                          <span className="sm:hidden">{isLastRead ? 'Last' : 'Mark'}</span>
+                        </Button>
+                      </div>
                     </div>
 
                     <ArabicText text={a.arabic} size="lg" />
@@ -512,6 +716,56 @@ function SurahReader({
             </div>
           )}
         </>
+      )}
+
+      {/* ————— Sticky recitation player (fixed above the mobile nav) ————— */}
+      {audioCurrent != null && surahMeta && (
+        <div
+          className="fixed left-0 right-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] lg:bottom-5 z-40 px-3 sm:px-4 animate-in slide-in-from-bottom-3 fade-in duration-300"
+          role="region"
+          aria-label="Recitation player"
+        >
+          <div className="max-w-4xl mx-auto">
+            <div className="paper-card flex items-center gap-2.5 rounded-2xl border border-primary/30 shadow-lg px-3.5 py-2.5 backdrop-blur-md bg-card/95">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-sm">
+                {audioLoading ? (
+                  <Loader2 className="h-4.5 w-4.5 animate-spin" aria-hidden />
+                ) : audioPlaying ? (
+                  <Volume2 className="h-4.5 w-4.5" aria-hidden />
+                ) : (
+                  <Headphones className="h-4.5 w-4.5" aria-hidden />
+                )}
+              </span>
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-foreground leading-tight truncate">
+                  {surahMeta.transliteration} · Ayah {audioCurrent}
+                  <span className="text-muted-foreground font-normal"> of {data?.ayahs.length ?? surahMeta.ayahs}</span>
+                </p>
+                <p className="text-[0.65rem] text-muted-foreground truncate">
+                  Mishary Rashid Alafasy · islamic.network CDN
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                size="icon"
+                className="h-11 w-11 rounded-full shrink-0"
+                onClick={toggleAudio}
+                aria-label={audioPlaying ? 'Pause recitation' : 'Resume recitation'}
+              >
+                {audioPlaying ? <Pause className="h-4.5 w-4.5" aria-hidden /> : <Play className="h-4.5 w-4.5" aria-hidden />}
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className="h-11 w-11 rounded-full shrink-0 text-muted-foreground hover:text-destructive"
+                onClick={stopAudio}
+                aria-label="Stop recitation"
+              >
+                <Square className="h-4 w-4" aria-hidden />
+              </Button>
+            </div>
+          </div>
+        </div>
       )}
     </section>
   );

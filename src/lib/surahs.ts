@@ -142,6 +142,42 @@ export function getSurah(n: number): SurahMeta | undefined {
   return SURAHS.find((s) => s.number === n);
 }
 
+// ————————————————————————————————————————————————————————————————
+// Audio recitation (integration layer).
+// Per-ayah recitation by Mishary Rashid Alafasy, streamed from the
+// islamic.network audio CDN — the audio companion of api.alquran.cloud.
+// The URL pattern is https://cdn.islamic.network/quran/audio/128/ar.alafasy/{n}.mp3
+// where {n} is the ayah's global number (1–6236) in the standard
+// (Kufan) numbering. The global number is derived deterministically
+// from the cumulative ayah counts of the preceding surahs.
+// ————————————————————————————————————————————————————————————————
+
+const FIRST_GLOBAL_AYAH: number[] = (() => {
+  const first = new Array<number>(RAW.length + 1).fill(0);
+  for (let i = 0; i < RAW.length; i += 1) {
+    first[RAW[i][0]] = i === 0 ? 1 : first[RAW[i - 1][0]] + RAW[i - 1][4];
+  }
+  return first;
+})();
+
+/** Global ayah number (1–6236) for a given surah:ayah, or null if invalid. */
+export function globalAyahNumber(surahNumber: number, ayahNumber: number): number | null {
+  const meta = getSurah(surahNumber);
+  if (!meta || ayahNumber < 1 || ayahNumber > meta.ayahs) return null;
+  const first = FIRST_GLOBAL_AYAH[surahNumber] ?? 0;
+  if (first < 1) return null;
+  return first + ayahNumber - 1;
+}
+
+/** Audio URL for an ayah (null when the reference is invalid). */
+export function ayahAudioUrl(surahNumber: number, ayahNumber: number): string | null {
+  const n = globalAyahNumber(surahNumber, ayahNumber);
+  return n ? `https://cdn.islamic.network/quran/audio/128/ar.alafasy/${n}.mp3` : null;
+}
+
+export const RECITER_NOTE =
+  'Recitation: Mishary Rashid Alafasy — streamed via the islamic.network audio CDN (the audio companion of the external Quran dataset). Requires an internet connection; if it cannot be reached, no audio plays rather than a wrong recitation.';
+
 export const QURAN_TRANSLATION_SOURCE = 'BASIRA Simple English rendering of the Arabic (public domain)';
 export const QURAN_INTEGRATION_NOTE =
   'Reading mode connects to an external Quran dataset (api.alquran.cloud) for the full text with the Pickthall translation (public domain, 1930). When the external source cannot be reached, BASIRA shows its curated verified ayah collection instead and clearly says so.';
