@@ -1,0 +1,822 @@
+     1→'use client';
+     2→
+     3→import * as React from 'react';
+     4→import { cn } from '@/lib/utils';
+     5→import { useApp } from '@/lib/store';
+     6→import { SourceCard } from '@/components/shared/source-card';
+     7→import { ArabicText } from '@/components/shared/arabic-text';
+     8→import { ViewHeader, SearchBar, EmptyState } from '@/components/shared/view-header';
+     9→import { SURAHS, getSurah, QURAN_INTEGRATION_NOTE, type SurahMeta } from '@/lib/surahs';
+    10→import { useToast } from '@/hooks/use-toast';
+    11→import type { SourceRecord } from '@/lib/types';
+    12→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    13→import { Button } from '@/components/ui/button';
+    14→import { Input } from '@/components/ui/input';
+    15→import { Badge } from '@/components/ui/badge';
+    16→import { Card, CardContent } from '@/components/ui/card';
+    17→import { Alert, AlertTitle, AlertDescription } from '@/components/ui/alert';
+    18→import { Skeleton } from '@/components/ui/skeleton';
+    19→import {
+    20→  BookOpen,
+    21→  Bookmark,
+    22→  BookmarkCheck,
+    23→  ChevronLeft,
+    24→  CloudOff,
+    25→  Info,
+    26→  Loader2,
+    27→  RefreshCw,
+    28→  Search,
+    29→  SearchX,
+    30→  Tags,
+    31→} from 'lucide-react';
+    32→
+    33→// ============================================================================
+    34→// QuranView — Read (full mushaf via integration layer) · Topics · Search.
+    35→// Accuracy before speed: the reader labels its data source honestly, and the
+    36→// topic/search tabs only surface BASIRA's verified, checked records.
+    37→// ============================================================================
+    38→
+    39→interface ContentResponse {
+    40→  items: SourceRecord[];
+    41→  total: number;
+    42→}
+    43→
+    44→interface ReaderAyah {
+    45→  numberInSurah: number;
+    46→  arabic: string;
+    47→  translation: string;
+    48→  excerptOnly?: boolean;
+    49→  slug?: string | null;
+    50→}
+    51→
+    52→type SurahStatus = 'external' | 'cached' | 'local-curated';
+    53→
+    54→interface SurahResponse {
+    55→  surah: SurahMeta;
+    56→  ayahs: ReaderAyah[];
+    57→  translationSource: string;
+    58→  status: SurahStatus;
+    59→  source: string;
+    60→  note: string;
+    61→}
+    62→
+    63→const QURAN_TOPICS = [
+    64→  'patience',
+    65→  'anxiety',
+    66→  'prayer',
+    67→  'fasting',
+    68→  'parents',
+    69→  'forgiveness',
+    70→  'repentance',
+    71→  'mercy',
+    72→  'jannah',
+    73→  'knowledge',
+    74→  'kindness',
+    75→  'marriage',
+    76→  'business',
+    77→  'dhikr',
+    78→  'gratitude',
+    79→  'hope',
+    80→  'death',
+    81→  'purpose',
+    82→  'trial',
+    83→  'guidance',
+    84→];
+    85→
+    86→const SEARCH_SUGGESTIONS = ['patience', 'anxiety', 'parents', 'forgiveness', 'mercy', 'purpose'];
+    87→
+    88→async function fetchJson<T>(url: string, init?: RequestInit): Promise<T | null> {
+    89→  try {
+    90→    const res = await fetch(url, { cache: 'no-store', ...init });
+    91→    if (!res.ok) return null;
+    92→    return (await res.json()) as T;
+    93→  } catch {
+    94→    return null;
+    95→  }
+    96→}
+    97→
+    98→/** Honest count: the search API caps returned items, so say "Showing X of Y" when that happens. */
+    99→function countLabel(shown: number, total: number): string {
+   100→  if (total > shown) return `Showing ${shown} of ${total}`;
+   101→  return `${shown}`;
+   102→}
+   103→
+   104→function ResultSkeleton() {
+   105→  return (
+   106→    <div className="paper-card rounded-xl border border-border/80 p-4 space-y-3" aria-hidden>
+   107→      <Skeleton className="h-4 w-44" />
+   108→      <Skeleton className="h-7 w-11/12 mx-auto" />
+   109→      <Skeleton className="h-4 w-full" />
+   110→      <Skeleton className="h-4 w-2/3" />
+   111→    </div>
+   112→  );
+   113→}
+   114→
+   115→function LoadingList({ label }: { label: string }) {
+   116→  return (
+   117→    <div role="status" aria-busy="true" className="space-y-4">
+   118→      <span className="sr-only">{label}</span>
+   119→      <ResultSkeleton />
+   120→      <ResultSkeleton />
+   121→      <ResultSkeleton />
+   122→    </div>
+   123→  );
+   124→}
+   125→
+   126→function ErrorState({ onRetry, what }: { onRetry: () => void; what: string }) {
+   127→  return (
+   128→    <div className="text-center py-10 px-4">
+   129→      <p className="font-medium text-foreground/80">Could not load {what}</p>
+   130→      <p className="text-sm text-muted-foreground mt-1 max-w-sm mx-auto leading-relaxed">
+   131→        Please check your connection and try again.
+   132→      </p>
+   133→      <Button onClick={onRetry} variant="outline" className="h-11 px-5 mt-4">
+   134→        <RefreshCw className="h-4 w-4 mr-2" aria-hidden />
+   135→        Try again
+   136→      </Button>
+   137→    </div>
+   138→  );
+   139→}
+   140→
+   141→// ————————————————————————————————————————————————————————————————
+   142→// Read tab · Surah browser
+   143→// ————————————————————————————————————————————————————————————————
+   144→
+   145→function SurahBrowser({ progress, onOpen }: { progress: Record<number, number>; onOpen: (n: number) => void }) {
+   146→  const [filter, setFilter] = React.useState('');
+   147→
+   148→  const q = filter.trim().toLowerCase();
+   149→  const filtered = React.useMemo(() => {
+   150→    if (!q) return SURAHS;
+   151→    return SURAHS.filter(
+   152→      (s) =>
+   153→        String(s.number) === q ||
+   154→        s.transliteration.toLowerCase().includes(q) ||
+   155→        s.english.toLowerCase().includes(q)
+   156→    );
+   157→  }, [q]);
+   158→
+   159→  const startedCount = Object.keys(progress).length;
+   160→
+   161→  return (
+   162→    <section aria-label="Surah browser">
+   163→      <div className="relative mb-3">
+   164→        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden />
+   165→        <Input
+   166→          value={filter}
+   167→          onChange={(e) => setFilter(e.target.value)}
+   168→          type="search"
+   169→          placeholder="Filter surahs — number, name, or meaning (e.g. 2, Maryam, light)"
+   170→          aria-label="Filter the surah list"
+   171→          className="pl-10 h-11 rounded-xl bg-card border-border/80"
+   172→        />
+   173→      </div>
+   174→
+   175→      {startedCount > 0 && (
+   176→        <p className="text-xs text-muted-foreground mb-2 px-1">
+   177→          You have reading progress in {startedCount} {startedCount === 1 ? 'surah' : 'surahs'} — look for the
+   178→          <span className="text-primary font-medium"> Continue </span>
+   179→          chip.
+   180→        </p>
+   181→      )}
+   182→
+   183→      {filtered.length === 0 ? (
+   184→        <EmptyState
+   185→          icon={<SearchX className="h-10 w-10" aria-hidden />}
+   186→          title="No surah matches that filter"
+   187→          hint="Try a number (1–114), a name like &ldquo;Yusuf&rdquo;, or a meaning like &ldquo;light&rdquo;."
+   188→        />
+   189→      ) : (
+   190→        <ul
+   191→          className="max-h-[26rem] sm:max-h-[32rem] overflow-y-auto scrollbar-soft rounded-xl border border-border/70 bg-card/60 divide-y divide-border/60"
+   192→          aria-label="All surahs"
+   193→        >
+   194→          {filtered.map((s) => {
+   195→            const lastAyah = progress[s.number];
+   196→            return (
+   197→              <li key={s.number}>
+   198→                <button
+   199→                  onClick={() => onOpen(s.number)}
+   200→                  className="w-full flex items-center gap-3 px-3 sm:px-4 py-3 min-h-[60px] text-left hover:bg-muted/70 active:bg-muted transition-colors focus-ring"
+   201→                  aria-label={`Open surah ${s.number}: ${s.transliteration} — ${s.english}, ${s.place}, ${s.ayahs} ayahs${
+   202→                    lastAyah ? `, continue from ayah ${lastAyah}` : ''
+   203→                  }`}
+   204→                >
+   205→                  <span
+   206→                    className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary text-sm font-semibold tabular-nums"
+   207→                    aria-hidden
+   208→                  >
+   209→                    {s.number}
+   210→                  </span>
+   211→                  <span className="min-w-0 flex-1">
+   212→                    <span className="flex items-baseline gap-2 flex-wrap">
+   213→                      <span className="font-semibold text-foreground leading-tight">{s.transliteration}</span>
+   214→                      <span className="text-xs text-muted-foreground">{s.english}</span>
+   215→                    </span>
+   216→                    <span className="block text-[0.7rem] text-muted-foreground mt-0.5">
+   217→                      {s.place} · {s.ayahs} {s.ayahs === 1 ? 'ayah' : 'ayahs'}
+   218→                    </span>
+   219→                  </span>
+   220→                  {typeof lastAyah === 'number' && (
+   221→                    <span className="inline-flex items-center gap-1 rounded-full bg-primary/10 text-primary text-[0.65rem] font-semibold px-2.5 py-1 border border-primary/25 shrink-0">
+   222→                      <BookmarkCheck className="h-3 w-3 shrink-0" aria-hidden />
+   223→                      <span className="sm:hidden">{lastAyah}</span>
+   224→                      <span className="hidden sm:inline">Continue · ayah {lastAyah}</span>
+   225→                    </span>
+   226→                  )}
+   227→                  <span className="font-arabic text-xl sm:text-2xl text-foreground/90 shrink-0" dir="rtl" lang="ar">
+   228→                    {s.arabic}
+   229→                  </span>
+   230→                </button>
+   231→              </li>
+   232→            );
+   233→          })}
+   234→        </ul>
+   235→      )}
+   236→
+   237→      <div className="mt-3 flex items-start gap-2.5 rounded-xl border border-border/70 bg-muted/40 px-4 py-3">
+   238→        <Info className="h-4 w-4 text-gold shrink-0 mt-0.5" aria-hidden />
+   239→        <p className="text-xs text-muted-foreground leading-relaxed">{QURAN_INTEGRATION_NOTE}</p>
+   240→      </div>
+   241→    </section>
+   242→  );
+   243→}
+   244→
+   245→// ————————————————————————————————————————————————————————————————
+   246→// Read tab · Surah reader (in-component sub-view)
+   247→// ————————————————————————————————————————————————————————————————
+   248→
+   249→const STATUS_LABEL: Record<SurahStatus, string> = {
+   250→  external: 'Full surah · external dataset',
+   251→  cached: 'Full surah · cached locally',
+   252→  'local-curated': 'Curated ayahs only',
+   253→};
+   254→
+   255→function SurahReader({
+   256→  surahNumber,
+   257→  lastRead,
+   258→  onBack,
+   259→  onProgress,
+   260→}: {
+   261→  surahNumber: number;
+   262→  lastRead?: number;
+   263→  onBack: () => void;
+   264→  onProgress: (surahNumber: number, lastAyah: number) => void;
+   265→}) {
+   266→  const { toast } = useToast();
+   267→  const toggleBookmark = useApp((s) => s.toggleBookmark);
+   268→  const openRecordBySlug = useApp((s) => s.openRecordBySlug);
+   269→  const bookmarkSlugs = useApp((s) => s.bookmarkSlugs);
+   270→
+   271→  const [data, setData] = React.useState<SurahResponse | null>(null);
+   272→  const [state, setState] = React.useState<'loading' | 'ready' | 'error'>('loading');
+   273→  const [reloadTick, setReloadTick] = React.useState(0);
+   274→  const [marking, setMarking] = React.useState<number | null>(null);
+   275→
+   276→  React.useEffect(() => {
+   277→    let alive = true;
+   278→    setState('loading');
+   279→    void (async () => {
+   280→      const res = await fetchJson<SurahResponse>(`/api/quran/surah/${surahNumber}`);
+   281→      if (!alive) return;
+   282→      if (res && Array.isArray(res.ayahs)) {
+   283→        setData(res);
+   284→        setState('ready');
+   285→      } else {
+   286→        setState('error');
+   287→      }
+   288→    })();
+   289→    return () => {
+   290→      alive = false;
+   291→    };
+   292→  }, [surahNumber, reloadTick]);
+   293→
+   294→  // After loading, jump to the last-read ayah (or the top of the surah header).
+   295→  React.useEffect(() => {
+   296→    if (state !== 'ready') return;
+   297→    const lastReadEl = typeof lastRead === 'number' ? document.getElementById(`ayah-${surahNumber}-${lastRead}`) : null;
+   298→    const target = lastReadEl ?? document.getElementById(`surah-top-${surahNumber}`);
+   299→    if (target) {
+   300→      requestAnimationFrame(() => {
+   301→        target.scrollIntoView({ behavior: 'smooth', block: lastReadEl ? 'center' : 'start' });
+   302→      });
+   303→    }
+   304→  }, [state, surahNumber]);
+   305→
+   306→  const markLastRead = async (ayah: number) => {
+   307→    if (marking !== null) return;
+   308→    setMarking(ayah);
+   309→    const res = await fetchJson<{ ok: boolean }>('/api/progress', {
+   310→      method: 'POST',
+   311→      headers: { 'Content-Type': 'application/json' },
+   312→      body: JSON.stringify({ kind: 'reading', surahNumber, lastAyah: ayah }),
+   313→    });
+   314→    setMarking(null);
+   315→    if (res?.ok) {
+   316→      onProgress(surahNumber, ayah);
+   317→      toast({
+   318→        title: 'Reading position saved',
+   319→        description: `Last read: ${getSurah(surahNumber)?.transliteration ?? `Surah ${surahNumber}`} · ayah ${ayah}.`,
+   320→      });
+   321→    } else {
+   322→      toast({
+   323→        title: 'Could not save reading position',
+   324→        description: 'Please check your connection and try again.',
+   325→      });
+   326→    }
+   327→  };
+   328→
+   329→  const surahMeta = data?.surah ?? getSurah(surahNumber);
+   330→
+   331→  return (
+   332→    <section aria-label={`Surah ${surahNumber} reader`}>
+   333→      {/* Reader toolbar */}
+   334→      <div className="flex items-center justify-between gap-2 mb-4">
+   335→        <Button
+   336→          variant="ghost"
+   337→          onClick={onBack}
+   338→          className="h-11 px-3 -ml-2 text-muted-foreground hover:text-foreground"
+   339→          aria-label="Back to the surah list"
+   340→        >
+   341→          <ChevronLeft className="h-5 w-5 mr-1" aria-hidden />
+   342→          All surahs
+   343→        </Button>
+   344→        {typeof lastRead === 'number' && (
+   345→          <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 border border-border/60 rounded-full px-3 py-2">
+   346→            <BookmarkCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
+   347→            Last read: ayah {lastRead}
+   348→          </span>
+   349→        )}
+   350→      </div>
+   351→
+   352→      {state === 'loading' && (
+   353→        <div role="status" aria-busy="true" className="space-y-4">
+   354→          <span className="sr-only">Loading surah…</span>
+   355→          <Skeleton className="h-44 w-full rounded-xl" />
+   356→          <Skeleton className="h-36 w-full rounded-xl" />
+   357→          <Skeleton className="h-36 w-full rounded-xl" />
+   358→        </div>
+   359→      )}
+   360→
+   361→      {state === 'error' && (
+   362→        <ErrorState what={`surah ${surahNumber}`} onRetry={() => setReloadTick((t) => t + 1)} />
+   363→      )}
+   364→
+   365→      {state === 'ready' && data && surahMeta && (
+   366→        <>
+   367→          {/* Surah header card */}
+   368→          <Card className="paper-card overflow-hidden border-border/80 mb-5">
+   369→            <div className="pattern-khatim pattern-fade h-1.5 w-full" aria-hidden />
+   370→            <CardContent className="p-4 sm:p-6 text-center">
+   371→              <p className="text-[0.65rem] uppercase tracking-[0.25em] text-muted-foreground">
+   372→                Surah {surahMeta.number} of 114
+   373→              </p>
+   374→              <h2
+   375→                id={`surah-top-${surahNumber}`}
+   376→                className="font-arabic text-4xl sm:text-5xl text-foreground leading-[1.7] my-3"
+   377→                dir="rtl"
+   378→                lang="ar"
+   379→              >
+   380→                {surahMeta.arabic}
+   381→              </h2>
+   382→              <p className="font-display text-xl sm:text-2xl font-semibold text-foreground">{surahMeta.transliteration}</p>
+   383→              <p className="text-sm text-muted-foreground italic mt-0.5">{surahMeta.english}</p>
+   384→              <div className="flex items-center justify-center gap-2 flex-wrap mt-4">
+   385→                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs font-medium">
+   386→                  {surahMeta.place}
+   387→                </Badge>
+   388→                <Badge variant="outline" className="rounded-full px-3 py-1 text-xs font-medium">
+   389→                  {surahMeta.ayahs} {surahMeta.ayahs === 1 ? 'ayah' : 'ayahs'}
+   390→                </Badge>
+   391→                <Badge
+   392→                  variant="outline"
+   393→                  className={cn(
+   394→                    'rounded-full px-3 py-1 text-xs font-medium',
+   395→                    data.status === 'local-curated' ? 'border-gold/50 text-gold' : 'border-primary/30 text-primary'
+   396→                  )}
+   397→                >
+   398→                  {STATUS_LABEL[data.status]}
+   399→                </Badge>
+   400→              </div>
+   401→              <p className="text-[0.68rem] text-muted-foreground mt-4 leading-relaxed">
+   402→                Translation: {data.translationSource}
+   403→                {data.source ? ` · ${data.source}` : ''}
+   404→              </p>
+   405→            </CardContent>
+   406→          </Card>
+   407→
+   408→          {data.status === 'local-curated' && (
+   409→            <Alert className="mb-5 border-gold/40 bg-gold/10">
+   410→              <CloudOff className="h-4 w-4 text-gold" aria-hidden />
+   411→              <AlertTitle className="text-foreground">Only BASIRA&apos;s curated ayahs are available right now</AlertTitle>
+   412→              <AlertDescription>{data.note}</AlertDescription>
+   413→            </Alert>
+   414→          )}
+   415→
+   416→          {data.ayahs.length === 0 ? (
+   417→            <EmptyState
+   418→              icon={<BookOpen className="h-10 w-10" aria-hidden />}
+   419→              title="No curated ayahs for this surah yet"
+   420→              hint="The external Quran dataset could not be reached and BASIRA has not curated this surah yet. Try the Topics tab — every ayah there is verified."
+   421→            />
+   422→          ) : (
+   423→            <div className="space-y-3 sm:space-y-4">
+   424→              {data.ayahs.map((a) => {
+   425→                const isLastRead = lastRead === a.numberInSurah;
+   426→                const bookmarked = a.slug ? bookmarkSlugs.has(a.slug) : false;
+   427→                return (
+   428→                  <article
+   429→                    key={a.numberInSurah}
+   430→                    id={`ayah-${surahNumber}-${a.numberInSurah}`}
+   431→                    className={cn(
+   432→                      'paper-card rounded-xl border p-4 sm:p-5 transition-shadow',
+   433→                      isLastRead ? 'border-primary/50 shadow-md' : 'border-border/80 shadow-sm hover:shadow-md'
+   434→                    )}
+   435→                  >
+   436→                    <div className="flex items-center justify-between gap-2">
+   437→                      <span
+   438→                        className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary text-xs font-bold tabular-nums border border-primary/25"
+   439→                        aria-hidden
+   440→                      >
+   441→                        {a.numberInSurah}
+   442→                      </span>
+   443→                      <span className="sr-only">Ayah {a.numberInSurah}</span>
+   444→                      <Button
+   445→                        variant="ghost"
+   446→                        size="sm"
+   447→                        onClick={() => void markLastRead(a.numberInSurah)}
+   448→                        disabled={marking !== null}
+   449→                        className={cn(
+   450→                          'h-11 px-3 text-xs',
+   451→                          isLastRead ? 'text-primary hover:text-primary' : 'text-muted-foreground hover:text-foreground'
+   452→                        )}
+   453→                        aria-label={`Set ayah ${a.numberInSurah} as your last read position`}
+   454→                      >
+   455→                        {marking === a.numberInSurah ? (
+   456→                          <Loader2 className="h-4 w-4 mr-1.5 animate-spin" aria-hidden />
+   457→                        ) : (
+   458→                          <BookmarkCheck
+   459→                            className={cn('h-4 w-4 mr-1.5', isLastRead && 'fill-primary/20')}
+   460→                            aria-hidden
+   461→                          />
+   462→                        )}
+   463→                        {isLastRead ? 'Last read' : 'Set as last read'}
+   464→                      </Button>
+   465→                    </div>
+   466→
+   467→                    <ArabicText text={a.arabic} size="lg" />
+   468→                    <p className="text-foreground/90 text-[0.95rem] leading-relaxed">{a.translation}</p>
+   469→
+   470→                    {a.excerptOnly && (
+   471→                      <p className="text-xs italic text-muted-foreground mt-2">
+   472→                        Excerpt of the ayah, marked with an ellipsis — read the full verse in a printed mushaf.
+   473→                      </p>
+   474→                    )}
+   475→
+   476→                    {a.slug && (
+   477→                      <footer className="mt-3 pt-3 border-t border-border/60 flex items-center gap-2 flex-wrap">
+   478→                        <Button
+   479→                          variant="outline"
+   480→                          size="sm"
+   481→                          className="h-11 px-4"
+   482→                          onClick={() => void toggleBookmark(a.slug!)}
+   483→                          aria-pressed={bookmarked}
+   484→                          aria-label={bookmarked ? 'Remove this ayah from bookmarks' : 'Bookmark this ayah'}
+   485→                        >
+   486→                          <Bookmark className={cn('h-4 w-4 mr-1.5', bookmarked && 'fill-current text-gold')} aria-hidden />
+   487→                          {bookmarked ? 'Saved' : 'Save'}
+   488→                        </Button>
+   489→                        <Button
+   490→                          variant="ghost"
+   491→                          size="sm"
+   492→                          className="h-11 px-4 text-muted-foreground hover:text-foreground"
+   493→                          onClick={() => void openRecordBySlug(a.slug!)}
+   494→                          aria-label="Inspect the verified source record for this ayah"
+   495→                        >
+   496→                          <BookOpen className="h-4 w-4 mr-1.5" aria-hidden />
+   497→                          View source
+   498→                        </Button>
+   499→                        <span className="ml-auto text-[0.65rem] text-muted-foreground">Curated &amp; verified</span>
+   500→                      </footer>
+   501→                    )}
+   502→                  </article>
+   503→                );
+   504→              })}
+   505→
+   506→              <div className="text-center py-4">
+   507→                <p className="text-xs text-muted-foreground">
+   508→                  End of {surahMeta.transliteration} · {surahMeta.ayahs} {surahMeta.ayahs === 1 ? 'ayah' : 'ayahs'}
+   509→                </p>
+   510→                <div className="ornament-line mt-3" />
+   511→              </div>
+   512→            </div>
+   513→          )}
+   514→        </>
+   515→      )}
+   516→    </section>
+   517→  );
+   518→}
+   519→
+   520→// ————————————————————————————————————————————————————————————————
+   521→// Topics tab
+   522→// ————————————————————————————————————————————————————————————————
+   523→
+   524→function TopicPanel() {
+   525→  const [topic, setTopic] = React.useState<string>('patience');
+   526→  const [items, setItems] = React.useState<SourceRecord[]>([]);
+   527→  const [total, setTotal] = React.useState(0);
+   528→  const [loading, setLoading] = React.useState(true);
+   529→  const [failed, setFailed] = React.useState(false);
+   530→  const [reloadTick, setReloadTick] = React.useState(0);
+   531→
+   532→  React.useEffect(() => {
+   533→    let alive = true;
+   534→    setLoading(true);
+   535→    setFailed(false);
+   536→    void (async () => {
+   537→      const res = await fetchJson<ContentResponse>(
+   538→        `/api/content?type=QURAN&topic=${encodeURIComponent(topic)}&limit=60`
+   539→      );
+   540→      if (!alive) return;
+   541→      if (res) {
+   542→        setItems(res.items ?? []);
+   543→        setTotal(res.total ?? 0);
+   544→        setLoading(false);
+   545→      } else {
+   546→        setFailed(true);
+   547→        setLoading(false);
+   548→      }
+   549→    })();
+   550→    return () => {
+   551→      alive = false;
+   552→    };
+   553→  }, [topic, reloadTick]);
+   554→
+   555→  return (
+   556→    <section aria-label="Quran topics">
+   557→      <div className="flex flex-wrap gap-2" role="group" aria-label="Choose a topic">
+   558→        {QURAN_TOPICS.map((t) => {
+   559→          const active = topic === t;
+   560→          return (
+   561→            <button
+   562→              key={t}
+   563→              onClick={() => setTopic(t)}
+   564→              className={cn(
+   565→                'min-h-11 px-4 rounded-full text-sm font-medium border transition-colors focus-ring capitalize',
+   566→                active
+   567→                  ? 'bg-primary text-primary-foreground border-primary shadow-sm'
+   568→                  : 'bg-card text-muted-foreground border-border/80 hover:border-primary/40 hover:text-foreground'
+   569→              )}
+   570→              aria-pressed={active}
+   571→            >
+   572→              {t}
+   573→            </button>
+   574→          );
+   575→        })}
+   576→      </div>
+   577→
+   578→      <div className="mt-5">
+   579→        <p className="text-sm text-muted-foreground mb-3 capitalize" role="status" aria-live="polite">
+   580→          {loading ? (
+   581→            'Loading…'
+   582→          ) : failed ? null : (
+   583→            <>
+   584→              <span className="text-foreground font-semibold">{countLabel(items.length, total)}</span> verified{' '}
+   585→              {items.length === 1 ? 'ayah' : 'ayahs'} about {topic}
+   586→            </>
+   587→          )}
+   588→        </p>
+   589→
+   590→        {loading && <LoadingList label={`Loading ayahs about ${topic}…`} />}
+   591→        {!loading && failed && <ErrorState what={`ayahs about ${topic}`} onRetry={() => setReloadTick((t) => t + 1)} />}
+   592→        {!loading && !failed && items.length === 0 && (
+   593→          <EmptyState
+   594→            icon={<BookOpen className="h-10 w-10" aria-hidden />}
+   595→            title="No curated ayahs for this topic yet"
+   596→            hint="BASIRA only shows verified records and has not curated this topic yet — try another topic."
+   597→          />
+   598→        )}
+   599→        {!loading && !failed && items.length > 0 && (
+   600→          <div className="space-y-4">
+   601→            {items.map((r) => (
+   602→              <SourceCard key={r.id} record={r} />
+   603→            ))}
+   604→          </div>
+   605→        )}
+   606→      </div>
+   607→    </section>
+   608→  );
+   609→}
+   610→
+   611→// ————————————————————————————————————————————————————————————————
+   612→// Search tab
+   613→// ————————————————————————————————————————————————————————————————
+   614→
+   615→function SearchPanel() {
+   616→  const [query, setQuery] = React.useState('');
+   617→  const [submitted, setSubmitted] = React.useState<string | null>(null);
+   618→  const [items, setItems] = React.useState<SourceRecord[]>([]);
+   619→  const [total, setTotal] = React.useState(0);
+   620→  const [loading, setLoading] = React.useState(false);
+   621→  const [failed, setFailed] = React.useState(false);
+   622→  const [reloadTick, setReloadTick] = React.useState(0);
+   623→
+   624→  React.useEffect(() => {
+   625→    if (!submitted) return;
+   626→    let alive = true;
+   627→    setLoading(true);
+   628→    setFailed(false);
+   629→    void (async () => {
+   630→      const res = await fetchJson<ContentResponse>(
+   631→        `/api/content?type=QURAN&q=${encodeURIComponent(submitted)}&limit=60`
+   632→      );
+   633→      if (!alive) return;
+   634→      if (res) {
+   635→        setItems(res.items ?? []);
+   636→        setTotal(res.total ?? 0);
+   637→        setLoading(false);
+   638→      } else {
+   639→        setFailed(true);
+   640→        setLoading(false);
+   641→      }
+   642→    })();
+   643→    return () => {
+   644→      alive = false;
+   645→    };
+   646→  }, [submitted, reloadTick]);
+   647→
+   648→  const runSearch = (q: string) => {
+   649→    const qq = q.trim();
+   650→    if (!qq) return;
+   651→    setSubmitted(qq);
+   652→  };
+   653→
+   654→  return (
+   655→    <section aria-label="Search the verified Quran collection">
+   656→      <div className="flex gap-2">
+   657→        <SearchBar
+   658→          value={query}
+   659→          onChange={setQuery}
+   660→          onSubmit={() => runSearch(query)}
+   661→          autoFocus
+   662→          placeholder="Search verified ayahs — e.g. patience, anxiety, parents"
+   663→          ariaLabel="Search verified Quran ayahs"
+   664→          className="flex-1"
+   665→        />
+   666→        <Button
+   667→          onClick={() => runSearch(query)}
+   668→          disabled={!query.trim() || loading}
+   669→          className="h-11 px-5"
+   670→          aria-label="Search"
+   671→        >
+   672→          {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Search className="h-4 w-4" aria-hidden />}
+   673→          <span className="hidden sm:inline ml-2">Search</span>
+   674→        </Button>
+   675→      </div>
+   676→
+   677→      {!query.trim() && (
+   678→        <div className="mt-4">
+   679→          <p className="text-xs text-muted-foreground mb-2">Try searching for:</p>
+   680→          <div className="flex flex-wrap gap-2" role="group" aria-label="Suggested searches">
+   681→            {SEARCH_SUGGESTIONS.map((s) => (
+   682→              <button
+   683→                key={s}
+   684→                onClick={() => {
+   685→                  setQuery(s);
+   686→                  runSearch(s);
+   687→                }}
+   688→                className="min-h-11 px-4 rounded-full text-sm font-medium border border-border/80 bg-card text-muted-foreground hover:border-primary/40 hover:text-foreground transition-colors focus-ring capitalize"
+   689→              >
+   690→                {s}
+   691→              </button>
+   692→            ))}
+   693→          </div>
+   694→        </div>
+   695→      )}
+   696→
+   697→      {submitted && (
+   698→        <div className="mt-5">
+   699→          <p className="text-sm text-muted-foreground mb-3" role="status" aria-live="polite">
+   700→            {loading ? (
+   701→              'Searching…'
+   702→            ) : failed ? null : (
+   703→              <>
+   704→                <span className="text-foreground font-semibold">{countLabel(items.length, total)}</span> verified{' '}
+   705→                {items.length === 1 ? 'ayah' : 'ayahs'} matching &ldquo;{submitted}&rdquo;
+   706→              </>
+   707→            )}
+   708→          </p>
+   709→
+   710→          {loading && <LoadingList label="Searching ayahs…" />}
+   711→          {!loading && failed && <ErrorState what="search results" onRetry={() => setReloadTick((t) => t + 1)} />}
+   712→          {!loading && !failed && items.length === 0 && (
+   713→            <EmptyState
+   714→              icon={<SearchX className="h-10 w-10" aria-hidden />}
+   715→              title="No verified ayahs matched"
+   716→              hint="Try different words (e.g. &ldquo;patience&rdquo;, &ldquo;anxiety&rdquo;, &ldquo;parents&rdquo;) — BASIRA only searches its checked collection, never guesses."
+   717→            />
+   718→          )}
+   719→          {!loading && !failed && items.length > 0 && (
+   720→            <div className="space-y-4">
+   721→              {items.map((r) => (
+   722→                <SourceCard key={r.id} record={r} />
+   723→              ))}
+   724→            </div>
+   725→          )}
+   726→        </div>
+   727→      )}
+   728→    </section>
+   729→  );
+   730→}
+   731→
+   732→// ————————————————————————————————————————————————————————————————
+   733→// Main view
+   734→// ————————————————————————————————————————————————————————————————
+   735→
+   736→export function QuranView() {
+   737→  const viewParams = useApp((s) => s.viewParams);
+   738→  const [openSurah, setOpenSurah] = React.useState<number | null>(null);
+   739→  const [progress, setProgress] = React.useState<Record<number, number>>({});
+   740→
+   741→  // Reading progress ("Continue reading") — fetched once on mount.
+   742→  React.useEffect(() => {
+   743→    let alive = true;
+   744→    void (async () => {
+   745→      const data = await fetchJson<{ reading: { surahNumber: number; lastAyah: number }[] }>('/api/progress');
+   746→      if (!alive || !data?.reading) return;
+   747→      const map: Record<number, number> = {};
+   748→      for (const r of data.reading) {
+   749→        if (typeof r?.surahNumber === 'number' && typeof r?.lastAyah === 'number') {
+   750→          map[r.surahNumber] = r.lastAyah;
+   751→        }
+   752→      }
+   753→      setProgress(map);
+   754→    })();
+   755→    return () => {
+   756→      alive = false;
+   757→    };
+   758→  }, []);
+   759→
+   760→  // Deep-link from Home ("Continue reading") → open the reader directly.
+   761→  const surahParam = typeof viewParams.surah === 'number' ? viewParams.surah : undefined;
+   762→  React.useEffect(() => {
+   763→    if (typeof surahParam === 'number' && surahParam >= 1 && surahParam <= 114) {
+   764→      setOpenSurah(surahParam);
+   765→    }
+   766→  }, [surahParam]);
+   767→
+   768→  const recordProgress = (surahNumber: number, lastAyah: number) => {
+   769→    setProgress((p) => ({ ...p, [surahNumber]: lastAyah }));
+   770→  };
+   771→
+   772→  return (
+   773→    <div>
+   774→      <ViewHeader
+   775→        title="Qur'an"
+   776→        titleAr="القرآن الكريم"
+   777→        description="Read the full Qur'an with translation, explore verified ayahs by topic, or search BASIRA's checked collection — every result shows its source."
+   778→        back
+   779→      />
+   780→
+   781→      <Tabs defaultValue="read">
+   782→        <TabsList className="h-11 grid grid-cols-3 w-full max-w-md rounded-xl" aria-label="Quran sections">
+   783→          <TabsTrigger value="read" className="text-sm">
+   784→            <BookOpen className="h-4 w-4" aria-hidden />
+   785→            Read
+   786→          </TabsTrigger>
+   787→          <TabsTrigger value="topics" className="text-sm">
+   788→            <Tags className="h-4 w-4" aria-hidden />
+   789→            Topics
+   790→          </TabsTrigger>
+   791→          <TabsTrigger value="search" className="text-sm">
+   792→            <Search className="h-4 w-4" aria-hidden />
+   793→            Search
+   794→          </TabsTrigger>
+   795→        </TabsList>
+   796→
+   797→        <TabsContent value="read" className="mt-4">
+   798→          {openSurah === null ? (
+   799→            <SurahBrowser progress={progress} onOpen={(n) => setOpenSurah(n)} />
+   800→          ) : (
+   801→            <SurahReader
+   802→              key={openSurah}
+   803→              surahNumber={openSurah}
+   804→              lastRead={progress[openSurah]}
+   805→              onBack={() => setOpenSurah(null)}
+   806→              onProgress={recordProgress}
+   807→            />
+   808→          )}
+   809→        </TabsContent>
+   810→
+   811→        <TabsContent value="topics" className="mt-4">
+   812→          <TopicPanel />
+   813→        </TabsContent>
+   814→
+   815→        <TabsContent value="search" className="mt-4">
+   816→          <SearchPanel />
+   817→        </TabsContent>
+   818→      </Tabs>
+   819→    </div>
+   820→  );
+   821→}
+   822→

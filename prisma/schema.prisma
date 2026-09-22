@@ -1,0 +1,182 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================================================
+// BASIRA Islamic Source Database
+// All religious knowledge lives here — separated from AI logic — so the
+// knowledge base can be audited, reviewed by scholars, and updated
+// independently of the application.
+// ============================================================================
+model SourceText {
+  id                String    @id @default(cuid())
+  slug              String    @unique // stable id e.g. "quran-2-286", "bukhari-1", "dua-morning-dominion"
+  sourceType        String // QURAN | HADITH | DUA | DHIKR | FIQH | GLOSSARY | SEERAH | SCHOLARLY | GENERAL
+  title             String
+
+  // Quran-specific
+  surahNumber       Int?
+  surahNameEn       String?
+  surahNameAr       String?
+  surahNameTranslit String?
+  ayahNumber        Int?
+  ayahEnd           Int? // for ranges e.g. 93:1-8
+  excerptOnly       Boolean   @default(false) // true = partial ayah, ellipsis marked
+
+  // Hadith / narration-specific
+  collection        String? // e.g. "Sahih al-Bukhari", "Sahih Muslim", "Jami' at-Tirmidhi"
+  book              String? // e.g. "Book of Belief"
+  chapter           String?
+  hadithNumber      Int? // null = number pending verification
+  referenceNote     String? // e.g. "commonly numbered 9 or 39 depending on edition"
+  narrator          String? // companion who narrated
+  grade             String? // e.g. "Sahih", "Hasan"
+
+  // Scholarly-view specific
+  scholar           String?
+  school            String?
+
+  // Content
+  arabicText        String?
+  transliteration   String?
+  englishText       String
+  explanation        String?
+  practicalSteps    String? // JSON array of strings
+  targetCount       Int? // dhikr repetition target established by the source
+  translationSource  String    @default("BASIRA Simple English rendering (public domain)")
+
+  // Classification
+  topics            String    @default("") // comma separated: patience, salah...
+  keywords          String    @default("") // comma separated extra search terms
+  category          String? // dua category / dhikr category / fiqh topic / seerah period / glossary letter
+
+  // Verification + scholar review workflow
+  verificationStatus String    @default("VERIFIED") // VERIFIED | REFERENCE_PENDING | DISPUTED
+  reviewer           String?
+  lastReviewedAt     DateTime?
+  sourceStatus       String    @default("ACTIVE") // ACTIVE | FLAGGED | DISABLED
+  flagNote           String?
+
+  sortOrder          Int       @default(0)
+  active             Boolean   @default(true)
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  bookmarks          Bookmark[]
+}
+
+// ============================================================================
+// Users — anonymous, minimal data. No email/password by design (privacy).
+// ============================================================================
+model UserProfile {
+  id              String    @id @default(cuid())
+  sid             String    @unique // cookie session id
+  displayName     String?
+  madhhab         String? // null = no preference; HANAFI | SHAFII | MALIKI | HANBALI
+  language        String    @default("en")
+  showArabic      Boolean   @default(true)
+  showTranslit    Boolean   @default(false)
+  beginnerMode    Boolean   @default(false)
+  translationPref String    @default("simple")
+  prayerMethod    String    @default("MWL")
+  asrFactor       Int       @default(1) // 1 = majority schools, 2 = Hanafi shadow factor
+  locationLat     Float?
+  locationLng     Float?
+  locationName    String?
+  notifyPrayer    Boolean   @default(false)
+  notifyQuran     Boolean   @default(false)
+  notifyDhikr     Boolean   @default(false)
+  notifyFriday    Boolean   @default(false)
+  onboarded       Boolean   @default(false)
+
+  bookmarks       Bookmark[]
+
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model Bookmark {
+  id           String      @id @default(cuid())
+  userId       String
+  sourceTextId String
+  note         String?
+  createdAt    DateTime    @default(now())
+  user         UserProfile @relation(fields: [userId], references: [id], onDelete: Cascade)
+  source       SourceText  @relation(fields: [sourceTextId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, sourceTextId])
+}
+
+model ReadingProgress {
+  id          String   @id @default(cuid())
+  userId      String
+  surahNumber Int
+  lastAyah    Int
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([userId, surahNumber])
+}
+
+model DhikrProgress {
+  id        String   @id @default(cuid())
+  userId    String
+  dhikrKey  String // e.g. "after-salah:subhanallah33"
+  day       String // YYYY-MM-DD
+  count     Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, dhikrKey, day])
+}
+
+model LessonProgress {
+  id        String   @id @default(cuid())
+  userId    String
+  pathId    String
+  lessonId  String
+  completed Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, pathId, lessonId])
+}
+
+// Every Ask BASIRA exchange is stored so answers can be reviewed (quality control).
+model QuestionLog {
+  id           String   @id @default(cuid())
+  userId       String?
+  question     String
+  answer       String
+  sourcesJson  String   @default("[]") // JSON array of {slug, citation} used in the answer
+  verification String   @default("OK") // OK | PARTIAL | FAILED
+  reviewStatus String   @default("UNREVIEWED") // UNREVIEWED | APPROVED | FLAGGED
+  reviewerNote String?
+  createdAt    DateTime @default(now())
+}
+
+// Immutable audit trail for every knowledge-base modification (admin panel).
+model AuditLog {
+  id         String   @id @default(cuid())
+  action     String // CREATE | UPDATE | FLAG | DISABLE | ENABLE | LOGIN | REVIEW
+  entity     String // SourceText | QuestionLog
+  entityId   String?
+  beforeJson String?
+  afterJson  String?
+  createdAt  DateTime @default(now())
+}
+
+// Cache for the external full-Quran integration layer (api.alquran.cloud).
+// If the external source is unreachable, the app falls back to the curated
+// local SourceText ayahs and clearly says so.
+model QuranCache {
+  id          String   @id @default(cuid())
+  surahNumber Int      @unique
+  dataJson    String
+  fetchedAt   DateTime @default(now())
+}

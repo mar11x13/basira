@@ -1,0 +1,709 @@
+     1→'use client';
+     2→
+     3→import * as React from 'react';
+     4→import { useApp } from '@/lib/store';
+     5→import { SourceCard, CitationChip } from '@/components/shared/source-card';
+     6→import { Button } from '@/components/ui/button';
+     7→import { Badge } from '@/components/ui/badge';
+     8→import { Switch } from '@/components/ui/switch';
+     9→import { Skeleton } from '@/components/ui/skeleton';
+    10→import { useToast } from '@/hooks/use-toast';
+    11→import type { SourceRecord, AskResponse } from '@/lib/types';
+    12→import {
+    13→  AlertTriangle,
+    14→  BookOpen,
+    15→  RotateCcw,
+    16→  ShieldAlert,
+    17→  ShieldCheck,
+    18→  ShieldX,
+    19→  Sparkles,
+    20→} from 'lucide-react';
+    21→
+    22→// ============================================================================
+    23→// AskView — BASIRA's centerpiece: retrieval-grounded Q&A with inspectable
+    24→// citations. Conversation state lives in this component, with a light
+    25→// module-level memory so switching sections mid-conversation keeps the thread.
+    26→// ============================================================================
+    27→
+    28→const SUGGESTED_QUESTIONS = [
+    29→  'How do I pray Fajr?',
+    30→  'What breaks wudu?',
+    31→  'How do I make tawbah (repentance)?',
+    32→  'What does Islam teach about being good to my parents?',
+    33→  'What should I do if I missed a Salah?',
+    34→  'What are the Sunnahs of Friday?',
+    35→  'How can I become closer to Allah?',
+    36→  'What does Islam say about lying?',
+    37→  'What should I read before sleeping?',
+    38→  'What is the dua for entering the home?',
+    39→  "What does the Qur'an say about patience?",
+    40→  "What does the Qur'an say about anxiety?",
+    41→];
+    42→
+    43→interface Turn {
+    44→  id: string;
+    45→  question: string;
+    46→  response: AskResponse | null;
+    47→  error: string | null;
+    48→}
+    49→
+    50→/** Module-level memory — survives section switches (single-page app). */
+    51→let conversationMemory: { turns: Turn[]; input: string; loading: boolean } | null = null;
+    52→
+    53→function restoreConversation(): { turns: Turn[]; input: string } {
+    54→  const mem = conversationMemory;
+    55→  if (!mem) return { turns: [], input: '' };
+    56→  const wasLoading = mem.loading;
+    57→  return {
+    58→    turns: mem.turns.map((t) =>
+    59→      wasLoading && t.response === null && !t.error
+    60→        ? {
+    61→            ...t,
+    62→            error: 'This answer was interrupted before it finished. Tap "Try again" to re-ask BASIRA.',
+    63→          }
+    64→        : t
+    65→    ),
+    66→    input: mem.input,
+    67→  };
+    68→}
+    69→
+    70→// ————————————————— markdown-lite answer rendering —————————————————
+    71→// Supports: ### h3, #### h4, - bullets, 1. numbered items, **bold**,
+    72→// and [S#] citation tokens rendered as inspectable CitationChips.
+    73→
+    74→type Block =
+    75→  | { kind: 'h3' | 'h4' | 'p'; text: string }
+    76→  | { kind: 'ul'; items: string[] }
+    77→  | { kind: 'ol'; items: { num: number; text: string }[] }
+    78→  | { kind: 'quote'; lines: string[] };
+    79→
+    80→function parseBlocks(answer: string): Block[] {
+    81→  const blocks: Block[] = [];
+    82→  let list: Extract<Block, { kind: 'ul' | 'ol' }> | null = null;
+    83→  let quote: Extract<Block, { kind: 'quote' }> | null = null;
+    84→  const flush = () => {
+    85→    if (list) {
+    86→      blocks.push(list);
+    87→      list = null;
+    88→    }
+    89→    if (quote) {
+    90→      blocks.push(quote);
+    91→      quote = null;
+    92→    }
+    93→  };
+    94→  for (const rawLine of answer.split('\n')) {
+    95→    const line = rawLine.trim();
+    96→    if (!line) continue; // blank lines do not split a list apart
+    97→    if (line.startsWith('#### ')) {
+    98→      flush();
+    99→      blocks.push({ kind: 'h4', text: line.slice(5) });
+   100→      continue;
+   101→    }
+   102→    if (line.startsWith('### ')) {
+   103→      flush();
+   104→      blocks.push({ kind: 'h3', text: line.slice(4) });
+   105→      continue;
+   106→    }
+   107→    if (line.startsWith('>')) {
+   108→      if (!quote) {
+   109→        flush();
+   110→        quote = { kind: 'quote', lines: [] };
+   111→      }
+   112→      quote.lines.push(line.replace(/^>\s?/, ''));
+   113→      continue;
+   114→    }
+   115→    if (line.startsWith('- ')) {
+   116→      if (quote) {
+   117→        blocks.push(quote);
+   118→        quote = null;
+   119→      }
+   120→      if (!list || list.kind !== 'ul') {
+   121→        flush();
+   122→        list = { kind: 'ul', items: [] };
+   123→      }
+   124→      list.items.push(line.slice(2));
+   125→      continue;
+   126→    }
+   127→    const ordered = line.match(/^(\d+)\. +(.*)$/);
+   128→    if (ordered) {
+   129→      if (quote) {
+   130→        blocks.push(quote);
+   131→        quote = null;
+   132→      }
+   133→      if (!list || list.kind !== 'ol') {
+   134→        flush();
+   135→        list = { kind: 'ol', items: [] };
+   136→      }
+   137→      list.items.push({ num: Number(ordered[1]), text: ordered[2] });
+   138→      continue;
+   139→    }
+   140→    flush();
+   141→    blocks.push({ kind: 'p', text: line });
+   142→  }
+   143→  flush();
+   144→  return blocks;
+   145→}
+   146→
+   147→/** Tokenize a single line into text / <strong> / <em> / CitationChip pieces. */
+   148→function renderInline(
+   149→  text: string,
+   150→  sources: SourceRecord[],
+   151→  openRecord: (record: SourceRecord) => void
+   152→): React.ReactNode[] {
+   153→  const nodes: React.ReactNode[] = [];
+   154→  const re = /(\*\*[^*]+\*\*)|(\*[^*]+\*)|\[S(\d+)\]/g;
+   155→  let cursor = 0;
+   156→  let key = 0;
+   157→  let m: RegExpExecArray | null;
+   158→  while ((m = re.exec(text)) !== null) {
+   159→    if (m.index > cursor) nodes.push(text.slice(cursor, m.index));
+   160→    if (m[1]) {
+   161→      nodes.push(
+   162→        <strong key={key++} className="font-semibold text-foreground">
+   163→          {m[1].slice(2, -2)}
+   164→        </strong>
+   165→      );
+   166→    } else if (m[2]) {
+   167→      nodes.push(
+   168→        <em key={key++} className="italic">
+   169→          {m[2].slice(1, -1)}
+   170→        </em>
+   171→      );
+   172→    } else if (m[3]) {
+   173→      const n = Number(m[3]);
+   174→      const record = sources[n - 1]; // sources[i] corresponds to [S{i+1}]
+   175→      nodes.push(
+   176→        <CitationChip
+   177→          key={key++}
+   178→          index={n}
+   179→          record={record}
+   180→          onClick={(r) => {
+   181→            if (r) openRecord(r);
+   182→          }}
+   183→        />
+   184→      );
+   185→    }
+   186→    cursor = m.index + m[0].length;
+   187→  }
+   188→  if (cursor < text.length) nodes.push(text.slice(cursor));
+   189→  return nodes;
+   190→}
+   191→
+   192→function AnswerBody({ answer, sources }: { answer: string; sources: SourceRecord[] }) {
+   193→  const openRecord = useApp((s) => s.openRecord);
+   194→  const blocks = React.useMemo(() => parseBlocks(answer), [answer]);
+   195→  const inline = React.useCallback(
+   196→    (text: string) => renderInline(text, sources, openRecord),
+   197→    [sources, openRecord]
+   198→  );
+   199→  return (
+   200→    <div className="space-y-3">
+   201→      {blocks.map((b, i) => {
+   202→        if (b.kind === 'h3') {
+   203→          return (
+   204→            <h3 key={i} className="pt-1 font-display text-lg font-semibold leading-snug text-foreground">
+   205→              {inline(b.text)}
+   206→            </h3>
+   207→          );
+   208→        }
+   209→        if (b.kind === 'h4') {
+   210→          return (
+   211→            <h4 key={i} className="font-display text-[0.95rem] font-semibold leading-snug text-foreground/90">
+   212→              {inline(b.text)}
+   213→            </h4>
+   214→          );
+   215→        }
+   216→        if (b.kind === 'quote') {
+   217→          return (
+   218→            <blockquote
+   219→              key={i}
+   220→              className="space-y-2 rounded-r-lg border-l-2 border-gold/60 bg-gold/5 py-2.5 pl-4 pr-3"
+   221→            >
+   222→              {b.lines.map((line, j) => (
+   223→                <p key={j} className="text-[0.9rem] italic leading-relaxed text-foreground/85">
+   224→                  {inline(line)}
+   225→                </p>
+   226→              ))}
+   227→            </blockquote>
+   228→          );
+   229→        }
+   230→        if (b.kind === 'ul') {
+   231→          return (
+   232→            <ul key={i} className="list-none space-y-1.5">
+   233→              {b.items.map((item, j) => (
+   234→                <li key={j} className="flex gap-2.5 leading-relaxed text-foreground/90">
+   235→                  <span className="mt-[0.6em] h-1.5 w-1.5 shrink-0 rounded-full bg-gold" aria-hidden />
+   236→                  <span>{inline(item)}</span>
+   237→                </li>
+   238→              ))}
+   239→            </ul>
+   240→          );
+   241→        }
+   242→        if (b.kind === 'ol') {
+   243→          return (
+   244→            <ol key={i} className="list-none space-y-1.5">
+   245→              {b.items.map((item, j) => (
+   246→                <li key={j} className="flex gap-2.5 leading-relaxed text-foreground/90">
+   247→                  <span
+   248→                    className="mt-0.5 flex h-5 min-w-5 shrink-0 items-center justify-center rounded-full bg-primary/10 text-[0.62rem] font-semibold tabular-nums text-primary"
+   249→                    aria-hidden
+   250→                  >
+   251→                    {item.num}
+   252→                  </span>
+   253→                  <span>{inline(item.text)}</span>
+   254→                </li>
+   255→              ))}
+   256→            </ol>
+   257→          );
+   258→        }
+   259→        return (
+   260→          <p key={i} className="leading-relaxed text-foreground/90">
+   261→            {inline(b.text)}
+   262→          </p>
+   263→        );
+   264→      })}
+   265→    </div>
+   266→  );
+   267→}
+   268→
+   269→// ————————————————— verification banner (No-Hallucination Mode) —————————————————
+   270→
+   271→function VerificationBanner({ verification }: { verification: AskResponse['verification'] }) {
+   272→  const { status, notice } = verification;
+   273→  if (status === 'OK') {
+   274→    return (
+   275→      <p
+   276→        className="flex items-start gap-2 rounded-lg border border-primary/25 bg-primary/8 px-3.5 py-2.5"
+   277→        role="status"
+   278→      >
+   279→        <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-primary" aria-hidden />
+   280→        <span className="text-[0.78rem] font-medium leading-relaxed text-primary">
+   281→          {notice ?? 'All citations verified against the source database.'}
+   282→        </span>
+   283→      </p>
+   284→    );
+   285→  }
+   286→  if (status === 'PARTIAL') {
+   287→    return (
+   288→      <p
+   289→        className="flex items-start gap-2 rounded-lg border border-gold/40 bg-gold/10 px-3.5 py-2.5"
+   290→        role="status"
+   291→      >
+   292→        <ShieldAlert className="mt-0.5 h-4 w-4 shrink-0 text-gold" aria-hidden />
+   293→        <span className="text-[0.78rem] font-medium leading-relaxed text-gold">
+   294→          {notice ?? 'Some citations could not be fully verified — please read them with care.'}
+   295→        </span>
+   296→      </p>
+   297→    );
+   298→  }
+   299→  return (
+   300→    <p
+   301→      className="flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/8 px-3.5 py-2.5"
+   302→      role="alert"
+   303→    >
+   304→      <ShieldX className="mt-0.5 h-4 w-4 shrink-0 text-destructive" aria-hidden />
+   305→      <span className="text-[0.78rem] font-medium leading-relaxed text-destructive">
+   306→        {notice ?? 'BASIRA could not verify this answer against its sources — treat it with caution.'}
+   307→      </span>
+   308→    </p>
+   309→  );
+   310→}
+   311→
+   312→// ————————————————— calm loading state —————————————————
+   313→
+   314→function ThinkingCard() {
+   315→  const [seconds, setSeconds] = React.useState(0);
+   316→  React.useEffect(() => {
+   317→    const t = window.setInterval(() => setSeconds((s) => s + 1), 1000);
+   318→    return () => window.clearInterval(t);
+   319→  }, []);
+   320→  return (
+   321→    <article
+   322→      className="paper-card rounded-xl border border-border/80 p-5 shadow-sm"
+   323→      role="status"
+   324→      aria-busy="true"
+   325→      aria-label="BASIRA is checking its sources"
+   326→    >
+   327→      <div className="flex items-center gap-3.5">
+   328→        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+   329→          <Sparkles className="h-5 w-5 animate-pulse" aria-hidden />
+   330→        </span>
+   331→        <div className="min-w-0">
+   332→          <p className="font-medium leading-snug text-foreground">BASIRA is checking its sources…</p>
+   333→          <p className="mt-0.5 text-xs text-muted-foreground">
+   334→            retrieving verified records before answering
+   335→            <span className="ml-1.5 tabular-nums text-muted-foreground/70" aria-hidden>
+   336→              · {seconds}s
+   337→            </span>
+   338→          </p>
+   339→        </div>
+   340→      </div>
+   341→      <div className="mt-4 space-y-2.5 sm:pl-[3.75rem]">
+   342→        <Skeleton className="h-3.5 w-11/12 rounded-full" />
+   343→        <Skeleton className="h-3.5 w-full rounded-full" />
+   344→        <Skeleton className="h-3.5 w-7/12 rounded-full" />
+   345→      </div>
+   346→      <p className="mt-4 text-[0.7rem] italic leading-relaxed text-muted-foreground/75">
+   347→        Grounded answers take a moment — BASIRA reads each source before it writes.
+   348→      </p>
+   349→    </article>
+   350→  );
+   351→}
+   352→
+   353→// ————————————————— pieces —————————————————
+   354→
+   355→function UserBubble({ question }: { question: string }) {
+   356→  return (
+   357→    <div className="flex justify-end">
+   358→      <p className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-primary px-4 py-3 text-[0.95rem] leading-relaxed text-primary-foreground shadow-sm sm:max-w-[75%]">
+   359→        {question}
+   360→      </p>
+   361→    </div>
+   362→  );
+   363→}
+   364→
+   365→function AnswerCard({ response }: { response: AskResponse }) {
+   366→  return (
+   367→    <article className="paper-card overflow-hidden rounded-xl border border-border/80 shadow-sm">
+   368→      <div className="pattern-khatim h-1.5 w-full opacity-70" aria-hidden />
+   369→      <div className="space-y-4 p-4 sm:p-5">
+   370→        <header className="flex items-center gap-2.5">
+   371→          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+   372→            <Sparkles className="h-4 w-4" aria-hidden />
+   373→          </span>
+   374→          <p className="font-display text-sm font-semibold tracking-wide text-foreground/85">BASIRA</p>
+   375→        </header>
+   376→
+   377→        <AnswerBody answer={response.answer} sources={response.sources} />
+   378→
+   379→        {/* groundingError note: when the AI service is unreachable the API
+   380→            returns verification.status OK with an honest notice, and the
+   381→            answer body itself explains it — no duplicated banner needed. */}
+   382→        <VerificationBanner verification={response.verification} />
+   383→
+   384→        {response.sources.length > 0 && (
+   385→          <section aria-label="Sources for this answer" className="space-y-3 pt-1">
+   386→            <div className="flex items-center gap-2.5">
+   387→              <BookOpen className="h-3.5 w-3.5 text-gold" aria-hidden />
+   388→              <h3 className="text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+   389→                Sources · {response.sources.length}
+   390→              </h3>
+   391→              <div className="ornament-line flex-1" aria-hidden />
+   392→            </div>
+   393→            <div className="space-y-3">
+   394→              {response.sources.map((s) => (
+   395→                <SourceCard key={s.id} record={s} compact />
+   396→              ))}
+   397→            </div>
+   398→          </section>
+   399→        )}
+   400→      </div>
+   401→    </article>
+   402→  );
+   403→}
+   404→
+   405→function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void }) {
+   406→  return (
+   407→    <article className="rounded-xl border border-destructive/30 bg-destructive/5 p-4 sm:p-5" role="alert">
+   408→      <div className="flex flex-col gap-3 sm:flex-row sm:items-start">
+   409→        <AlertTriangle className="h-5 w-5 shrink-0 text-destructive sm:mt-0.5" aria-hidden />
+   410→        <p className="flex-1 text-sm leading-relaxed text-foreground/90">{message}</p>
+   411→        <Button
+   412→          type="button"
+   413→          variant="outline"
+   414→          size="sm"
+   415→          onClick={onRetry}
+   416→          className="min-h-11 shrink-0 rounded-lg px-4"
+   417→        >
+   418→          <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden />
+   419→          Try again
+   420→        </Button>
+   421→      </div>
+   422→    </article>
+   423→  );
+   424→}
+   425→
+   426→function Hero({ onAsk }: { onAsk: (question: string) => void }) {
+   427→  return (
+   428→    <section className="pt-4 text-center sm:pt-8">
+   429→      <div className="relative mx-auto w-fit">
+   430→        <div className="pattern-khatim absolute -inset-5 rounded-full opacity-60" aria-hidden />
+   431→        <span className="relative flex h-16 w-16 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-lg sm:h-20 sm:w-20">
+   432→          <Sparkles className="h-8 w-8 sm:h-9 sm:w-9" aria-hidden />
+   433→        </span>
+   434→      </div>
+   435→      <h1 className="mt-5 font-display text-3xl font-semibold leading-tight text-foreground sm:text-4xl">
+   436→        Ask <span className="text-primary">BASIRA</span>
+   437→      </h1>
+   438→      <p className="mt-1.5 font-arabic text-2xl text-gold" lang="ar" dir="rtl">
+   439→        اسأل بصيرة
+   440→      </p>
+   441→      <p className="mx-auto mt-4 max-w-xl text-sm leading-relaxed text-muted-foreground">
+   442→        Answers grounded only in verified sources — Qur&apos;an, Sahih al-Bukhari, and authentic
+   443→        collections. Every citation is inspectable; if BASIRA cannot verify something, it says so.
+   444→      </p>
+   445→      <div className="ornament-line mx-auto mt-6 max-w-sm" aria-hidden />
+   446→      <div className="mt-6">
+   447→        <p className="mb-3 text-[0.68rem] font-semibold uppercase tracking-[0.16em] text-muted-foreground">
+   448→          Try asking
+   449→        </p>
+   450→        <ul className="flex flex-wrap justify-center gap-2" aria-label="Suggested questions">
+   451→          {SUGGESTED_QUESTIONS.map((q) => (
+   452→            <li key={q}>
+   453→              <button
+   454→                type="button"
+   455→                onClick={() => onAsk(q)}
+   456→                className="min-h-11 max-w-full rounded-full border border-border/70 bg-card px-4 py-2 text-left text-[0.82rem] font-medium leading-snug text-foreground/80 shadow-sm transition-colors hover:border-primary/40 hover:text-primary focus-ring"
+   457→              >
+   458→                {q}
+   459→              </button>
+   460→            </li>
+   461→          ))}
+   462→        </ul>
+   463→      </div>
+   464→    </section>
+   465→  );
+   466→}
+   467→
+   468→// ————————————————— main view —————————————————
+   469→
+   470→export function AskView() {
+   471→  const viewParams = useApp((s) => s.viewParams);
+   472→  const profile = useApp((s) => s.profile);
+   473→  const updateProfile = useApp((s) => s.updateProfile);
+   474→  const { toast } = useToast();
+   475→
+   476→  const restored = React.useMemo(restoreConversation, []);
+   477→  const [turns, setTurns] = React.useState<Turn[]>(restored.turns);
+   478→  const [input, setInput] = React.useState(restored.input);
+   479→  const [loading, setLoading] = React.useState(false);
+   480→
+   481→  const loadingRef = React.useRef(false);
+   482→  const idRef = React.useRef(0);
+   483→  const taRef = React.useRef<HTMLTextAreaElement>(null);
+   484→  const endRef = React.useRef<HTMLDivElement>(null);
+   485→  const autoAskedRef = React.useRef<string | null>(null);
+   486→
+   487→  // persist conversation so section switches keep the thread
+   488→  React.useEffect(() => {
+   489→    conversationMemory = { turns, input, loading };
+   490→  }, [turns, input, loading]);
+   491→
+   492→  const submit = React.useCallback(
+   493→    async (raw: string) => {
+   494→      const question = raw.trim();
+   495→      if (!question || loadingRef.current) return;
+   496→      loadingRef.current = true;
+   497→      const id = `turn-${Date.now()}-${idRef.current++}`;
+   498→      setTurns((prev) => [...prev, { id, question, response: null, error: null }]);
+   499→      setInput('');
+   500→      setLoading(true);
+   501→      try {
+   502→        const res = await fetch('/api/ask', {
+   503→          method: 'POST',
+   504→          headers: { 'Content-Type': 'application/json' },
+   505→          body: JSON.stringify({
+   506→            question,
+   507→            beginnerMode: useApp.getState().profile?.beginnerMode ?? false,
+   508→            madhhab: useApp.getState().profile?.madhhab ?? null,
+   509→          }),
+   510→        });
+   511→        if (!res.ok) {
+   512→          const data = (await res.json().catch(() => null)) as { error?: string } | null;
+   513→          const message =
+   514→            data?.error ?? `BASIRA could not complete the request (status ${res.status}). Please try again.`;
+   515→          setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, error: message } : t)));
+   516→          toast({ title: 'No answer received', description: message, variant: 'destructive' });
+   517→        } else {
+   518→          const data = (await res.json()) as AskResponse;
+   519→          setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, response: data } : t)));
+   520→        }
+   521→      } catch {
+   522→        const message =
+   523→          "Could not reach BASIRA's servers — please check your connection and try again.";
+   524→        setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, error: message } : t)));
+   525→        toast({ title: 'Connection problem', description: message, variant: 'destructive' });
+   526→      } finally {
+   527→        loadingRef.current = false;
+   528→        setLoading(false);
+   529→      }
+   530→    },
+   531→    [toast]
+   532→  );
+   533→
+   534→  // prefill + auto-submit once when arriving with viewParams.question
+   535→  React.useEffect(() => {
+   536→    const q = typeof viewParams?.question === 'string' ? viewParams.question.trim() : '';
+   537→    if (q && autoAskedRef.current !== q) {
+   538→      autoAskedRef.current = q;
+   539→      void submit(q);
+   540→    }
+   541→  }, [viewParams, submit]);
+   542→
+   543→  // auto-scroll only when the reader is already near the bottom
+   544→  React.useEffect(() => {
+   545→    if (turns.length === 0) return;
+   546→    const nearBottom =
+   547→      window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 320;
+   548→    if (!nearBottom) return;
+   549→    const t = window.setTimeout(() => {
+   550→      endRef.current?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+   551→    }, 60);
+   552→    return () => window.clearTimeout(t);
+   553→  }, [turns, loading]);
+   554→
+   555→  // textarea auto-grow
+   556→  React.useEffect(() => {
+   557→    const el = taRef.current;
+   558→    if (!el) return;
+   559→    el.style.height = 'auto';
+   560→    el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+   561→  }, [input]);
+   562→
+   563→  const retry = (turn: Turn) => {
+   564→    setTurns((prev) => prev.filter((t) => t.id !== turn.id));
+   565→    void submit(turn.question);
+   566→  };
+   567→
+   568→  const startFresh = () => {
+   569→    setTurns([]);
+   570→    setInput('');
+   571→  };
+   572→
+   573→  const toggleBeginner = (checked: boolean) => {
+   574→    void updateProfile({ beginnerMode: checked }).catch((e: unknown) => {
+   575→      toast({
+   576→        title: 'Could not save preference',
+   577→        description: e instanceof Error ? e.message : 'Please try again.',
+   578→        variant: 'destructive',
+   579→      });
+   580→    });
+   581→  };
+   582→
+   583→  const onKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+   584→    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) {
+   585→      e.preventDefault();
+   586→      void submit(input);
+   587→    }
+   588→  };
+   589→
+   590→  const hasConversation = turns.length > 0 || loading;
+   591→
+   592→  return (
+   593→    <div className="space-y-5">
+   594→      {!hasConversation ? (
+   595→        <Hero onAsk={(q) => void submit(q)} />
+   596→      ) : (
+   597→        <>
+   598→          <header className="flex items-center justify-between gap-3">
+   599→            <div className="flex flex-wrap items-baseline gap-2.5">
+   600→              <h1 className="font-display text-xl font-semibold text-foreground">Ask BASIRA</h1>
+   601→              <span className="font-arabic text-base text-muted-foreground" lang="ar" dir="rtl">
+   602→                اسأل بصيرة
+   603→              </span>
+   604→            </div>
+   605→            {turns.length > 0 && (
+   606→              <Button
+   607→                type="button"
+   608→                variant="ghost"
+   609→                size="sm"
+   610→                onClick={startFresh}
+   611→                className="min-h-11 rounded-lg px-3 text-muted-foreground hover:text-foreground"
+   612→              >
+   613→                <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden />
+   614→                Start fresh
+   615→              </Button>
+   616→            )}
+   617→          </header>
+   618→          <div className="ornament-line" aria-hidden />
+   619→        </>
+   620→      )}
+   621→
+   622→      {/* ————— conversation ————— */}
+   623→      <div className="space-y-6" role="log" aria-label="Conversation with BASIRA" aria-live="polite">
+   624→        {turns.map((turn) => (
+   625→          <div key={turn.id} className="space-y-3.5">
+   626→            <UserBubble question={turn.question} />
+   627→            {turn.response ? (
+   628→              <AnswerCard response={turn.response} />
+   629→            ) : turn.error ? (
+   630→              <ErrorCard message={turn.error} onRetry={() => retry(turn)} />
+   631→            ) : null}
+   632→          </div>
+   633→        ))}
+   634→        {loading && <ThinkingCard />}
+   635→      </div>
+   636→
+   637→      <div ref={endRef} aria-hidden />
+   638→
+   639→      {/* ————— composer (stays available for follow-ups) ————— */}
+   640→      <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 lg:bottom-6">
+   641→        <form
+   642→          onSubmit={(e) => {
+   643→            e.preventDefault();
+   644→            void submit(input);
+   645→          }}
+   646→          aria-label="Ask BASIRA a question"
+   647→          className="overflow-hidden rounded-2xl border border-border/80 bg-background/95 shadow-lg shadow-foreground/5 backdrop-blur-md"
+   648→        >
+   649→          <div className="flex items-end gap-2 p-2.5">
+   650→            <textarea
+   651→              ref={taRef}
+   652→              value={input}
+   653→              onChange={(e) => setInput(e.target.value)}
+   654→              onKeyDown={onKeyDown}
+   655→              rows={1}
+   656→              enterKeyHint="send"
+   657→              placeholder="Ask anything — BASIRA answers only from verified sources…"
+   658→              aria-label="Your question for BASIRA"
+   659→              className="scrollbar-soft max-h-40 min-h-11 flex-1 resize-none overflow-y-auto rounded-xl bg-transparent px-3 py-2.5 text-[0.95rem] leading-relaxed text-foreground outline-none placeholder:text-muted-foreground"
+   660→            />
+   661→            <Button
+   662→              type="submit"
+   663→              size="icon"
+   664→              disabled={loading || !input.trim()}
+   665→              aria-label="Send question to BASIRA"
+   666→              className="h-11 w-11 shrink-0 rounded-xl"
+   667→            >
+   668→              <Sparkles className="h-5 w-5" aria-hidden />
+   669→            </Button>
+   670→          </div>
+   671→          <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 border-t border-border/60 px-3 py-1">
+   672→            <label
+   673→              htmlFor="ask-beginner"
+   674→              className="flex min-h-11 cursor-pointer select-none items-center gap-2.5"
+   675→            >
+   676→              <Switch
+   677→                id="ask-beginner"
+   678→                checked={profile?.beginnerMode ?? false}
+   679→                onCheckedChange={toggleBeginner}
+   680→              />
+   681→              <span className="text-[0.78rem] leading-snug text-muted-foreground">
+   682→                <span className="font-semibold text-foreground/80">Beginner Mode</span> — simple
+   683→                explanations
+   684→              </span>
+   685→            </label>
+   686→            <div className="flex items-center gap-2.5">
+   687→              {profile?.madhhab ? (
+   688→                <Badge
+   689→                  variant="outline"
+   690→                  className="border-border/70 text-[0.62rem] font-medium text-muted-foreground"
+   691→                >
+   692→                  Madhhab · {profile.madhhab}
+   693→                </Badge>
+   694→              ) : null}
+   695→              <span className="hidden text-[0.65rem] text-muted-foreground/70 sm:inline">
+   696→                Enter ↵ send · Shift+Enter new line
+   697→              </span>
+   698→            </div>
+   699→          </div>
+   700→        </form>
+   701→        <p className="mt-2.5 px-2 text-center text-[0.68rem] leading-relaxed text-muted-foreground/75">
+   702→          For personal rulings (marriage, divorce, inheritance, finance, abuse, medical), BASIRA
+   703→          provides general guidance and recommends a qualified scholar.
+   704→        </p>
+   705→      </div>
+   706→    </div>
+   707→  );
+   708→}
+   709→
