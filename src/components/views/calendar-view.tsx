@@ -153,7 +153,7 @@ export function CalendarView() {
             hint="Your connection may have dropped — please try again."
           />
           <Button variant="outline" size="lg" className="mt-1 rounded-xl" onClick={load}>
-            <RefreshCw className="h-4 w-4 mr-2" aria-hidden />
+            <RefreshCw className="h-4 w-4 me-2" aria-hidden />
             Try again
           </Button>
         </div>

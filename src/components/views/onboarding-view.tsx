@@ -88,7 +88,7 @@ export function OnboardingView() {
   const Icon = slide.icon;
 
   return (
-    <div className="min-h-[70vh] flex flex-col items-center justify-center py-8">
+    <div className="min-h-[60dvh] flex flex-col items-center justify-center py-6 sm:py-8">
       <div className="w-full max-w-md">
         {/* progress dots */}
         <div className="flex items-center justify-center gap-1.5 mb-8" aria-label={`Step ${step + 1} of ${SLIDES.length}`}>
@@ -128,27 +128,29 @@ export function OnboardingView() {
           )}
         </div>
 
-        <div className="flex items-center justify-between mt-6">
+        {/* Action bar — sticky above the mobile bottom nav (never covered,
+            always thumb-reachable on small screens). */}
+        <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-4 z-10 -mx-1 mt-6 flex items-center justify-between gap-3 rounded-2xl border border-border/60 bg-background/92 px-2.5 py-1.5 shadow-lg shadow-foreground/5 backdrop-blur-md">
           <Button
             variant="ghost"
             onClick={() => (step === 0 ? finish() : setStep((s) => s - 1))}
-            className="text-muted-foreground"
+            className="h-11 text-muted-foreground"
             disabled={saving}
           >
             {step === 0 ? (
               'Skip'
             ) : (
               <>
-                <ChevronLeft className="h-4 w-4 mr-1" /> Back
+                <ChevronLeft className="h-4 w-4 me-1 rtl:rotate-180" /> Back
               </>
             )}
           </Button>
-          <Button onClick={() => (step === SLIDES.length - 1 ? finish() : setStep((s) => s + 1))} disabled={saving} className="min-w-28">
+          <Button onClick={() => (step === SLIDES.length - 1 ? finish() : setStep((s) => s + 1))} disabled={saving} className="h-11 min-w-28">
             {step === SLIDES.length - 1 ? (
               saving ? 'Entering…' : 'Begin'
             ) : (
               <>
-                Next <ChevronRight className="h-4 w-4 ml-1" />
+                Next <ChevronRight className="h-4 w-4 ms-1 rtl:rotate-180" />
               </>
             )}
           </Button>

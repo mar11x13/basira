@@ -202,7 +202,7 @@ export function HadithView() {
           <Button
             onClick={() => search(query)}
             disabled={!query.trim() || loading}
-            className="h-11 px-5"
+            className="h-11 min-w-11 px-4"
             aria-label="Search hadith"
           >
             {loading ? (
@@ -210,7 +210,7 @@ export function HadithView() {
             ) : (
               <Search className="h-4 w-4" aria-hidden />
             )}
-            <span className="hidden sm:inline ml-2">Search</span>
+            <span className="hidden sm:inline ms-2">Search</span>
           </Button>
         </div>
 
@@ -313,7 +313,7 @@ export function HadithView() {
               Please check your connection and try again.
             </p>
             <Button onClick={() => setReloadTick((t) => t + 1)} variant="outline" className="h-11 px-5 mt-4">
-              <RefreshCw className="h-4 w-4 mr-2" aria-hidden />
+              <RefreshCw className="h-4 w-4 me-2" aria-hidden />
               Try again
             </Button>
           </div>
@@ -362,7 +362,7 @@ export function HadithView() {
                 <ScrollText className="h-5 w-5 text-gold shrink-0" aria-hidden />
                 <span className="text-sm font-semibold text-foreground">About these collections</span>
                 <ChevronDown
-                  className={cn('ml-auto h-4 w-4 text-muted-foreground transition-transform duration-200', aboutOpen && 'rotate-180')}
+                  className={cn('ms-auto h-4 w-4 text-muted-foreground transition-transform duration-200', aboutOpen && 'rotate-180')}
                   aria-hidden
                 />
               </button>

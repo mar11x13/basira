@@ -160,7 +160,7 @@ export function LearnView() {
             hint="Your connection may have dropped — please try again."
           />
           <Button variant="outline" size="lg" className="mt-1 rounded-xl" onClick={load}>
-            <RefreshCw className="h-4 w-4 mr-2" aria-hidden />
+            <RefreshCw className="h-4 w-4 me-2" aria-hidden />
             Try again
           </Button>
         </div>
@@ -283,11 +283,11 @@ function PathDetail({
         <Button
           variant="ghost"
           size="sm"
-          className="-ml-2 h-9 px-2 text-muted-foreground hover:text-foreground"
+          className="-ms-2 h-9 px-2 text-muted-foreground hover:text-foreground"
           onClick={onBack}
           aria-label="Back to all learning paths"
         >
-          <ChevronLeft className="h-4 w-4 mr-1" aria-hidden />
+          <ChevronLeft className="h-4 w-4 me-1 rtl:rotate-180" aria-hidden />
           All paths
         </Button>
       </div>
@@ -372,7 +372,7 @@ function PathDetail({
                   <ChevronRight
                     className={cn(
                       'h-4 w-4 shrink-0 text-muted-foreground transition-transform',
-                      isOpen && 'rotate-90'
+                      isOpen ? 'rotate-90' : 'rtl:rotate-180'
                     )}
                     aria-hidden
                   />
@@ -521,12 +521,12 @@ function LessonPanel({
       >
         {isDone ? (
           <>
-            <Check className="h-4 w-4 mr-2" aria-hidden />
+            <Check className="h-4 w-4 me-2" aria-hidden />
             Completed — tap to undo
           </>
         ) : (
           <>
-            <CircleCheck className="h-4 w-4 mr-2" aria-hidden />
+            <CircleCheck className="h-4 w-4 me-2" aria-hidden />
             Mark as complete
           </>
         )}

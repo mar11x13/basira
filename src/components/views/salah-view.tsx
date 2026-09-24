@@ -192,8 +192,31 @@ function TimesTab() {
 
   React.useEffect(() => {
     setMounted(true);
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
+    // Battery-conscious ticking: pause while the tab is hidden, resync on return.
+    const tick = () => setNow(new Date());
+    let t: number | undefined;
+    const start = () => {
+      if (t == null) t = window.setInterval(tick, 30_000);
+    };
+    const stop = () => {
+      if (t != null) {
+        clearInterval(t);
+        t = undefined;
+      }
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else {
+        tick();
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   const times = React.useMemo(
@@ -342,9 +365,9 @@ function TimesTab() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-semibold text-foreground leading-tight">
                   {label}
-                  <span className="font-arabic text-sm font-normal text-muted-foreground ml-2">{ar}</span>
+                  <span className="font-arabic text-sm font-normal text-muted-foreground ms-2">{ar}</span>
                   {informational ? (
-                    <Badge variant="secondary" className="ml-2 text-[0.6rem] align-middle">
+                    <Badge variant="secondary" className="ms-2 text-[0.6rem] align-middle">
                       informational
                     </Badge>
                   ) : null}
@@ -367,7 +390,7 @@ function TimesTab() {
           <div className="space-y-2">
             <p className="text-sm font-semibold text-foreground">Calculation method</p>
             <Select value={methodKey} onValueChange={onMethodChange}>
-              <SelectTrigger id="prayer-method" className="w-full h-11 rounded-xl" aria-label="Calculation method">
+              <SelectTrigger id="prayer-method" className="w-full h-11! rounded-xl" aria-label="Calculation method">
                 <SelectValue placeholder="Choose a method" />
               </SelectTrigger>
               <SelectContent>
@@ -680,7 +703,7 @@ export function SalahView() {
       <Tabs defaultValue="times">
         <TabsList className="h-auto w-full justify-start overflow-x-auto scrollbar-soft flex-nowrap gap-0.5 p-1">
           {SALAH_TABS.map(({ key, label }) => (
-            <TabsTrigger key={key} value={key} className="flex-none px-3 h-9 text-[0.8rem]">
+            <TabsTrigger key={key} value={key} className="flex-none px-3 h-11 text-[0.8rem]">
               {label}
             </TabsTrigger>
           ))}

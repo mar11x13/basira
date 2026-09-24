@@ -3,6 +3,7 @@
 import * as React from 'react';
 import { cn } from '@/lib/utils';
 import { useApp } from '@/lib/store';
+import { useKeyboardVisible } from '@/hooks/use-device';
 import { SourceCard, CitationChip } from '@/components/shared/source-card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -416,7 +417,7 @@ function ErrorCard({ message, onRetry }: { message: string; onRetry: () => void 
           onClick={onRetry}
           className="min-h-11 shrink-0 rounded-lg px-4"
         >
-          <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden />
+          <RotateCcw className="me-1.5 h-4 w-4" aria-hidden />
           Try again
         </Button>
       </div>
@@ -477,6 +478,7 @@ export function AskView() {
   const restored = React.useMemo(restoreConversation, []);
   const [turns, setTurns] = React.useState<Turn[]>(restored.turns);
   const [input, setInput] = React.useState(restored.input);
+  const keyboardOpen = useKeyboardVisible();
   const [loading, setLoading] = React.useState(false);
 
   const loadingRef = React.useRef(false);
@@ -611,7 +613,7 @@ export function AskView() {
                 onClick={startFresh}
                 className="min-h-11 rounded-lg px-3 text-muted-foreground hover:text-foreground"
               >
-                <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden />
+                <RotateCcw className="me-1.5 h-4 w-4" aria-hidden />
                 Start fresh
               </Button>
             )}
@@ -643,11 +645,16 @@ export function AskView() {
       <div ref={endRef} aria-hidden />
 
       {/* ————— composer (stays available for follow-ups; pinned only once a
-          conversation exists, so it never covers the suggestion chips) ————— */}
+          conversation exists, so it never covers the suggestion chips).
+          MOBILE KEYBOARD: while the virtual keyboard is open the composer
+          un-pins into normal document flow — the focused textarea then rides
+          naturally above the keyboard on iOS Safari and Android Chrome, and
+          the latest answer stays scrollable above it. When the keyboard
+          closes, the pinned position is restored. ————— */}
       <div
         className={cn(
           'z-20',
-          turns.length > 0 && 'sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-6'
+          turns.length > 0 && !keyboardOpen && 'sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom))] lg:bottom-6'
         )}
       >
         <form

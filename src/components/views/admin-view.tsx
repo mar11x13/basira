@@ -1600,7 +1600,7 @@ function RecordFormDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && !busy && onClose()}>
-      <DialogContent className="sm:max-w-2xl max-h-[90vh] overflow-y-auto scrollbar-soft rounded-xl">
+      <DialogContent className="sm:max-w-2xl max-h-screen-safe overflow-y-auto scrollbar-soft rounded-xl">
         <DialogHeader>
           <DialogTitle className="font-display">{isEdit ? 'Edit source record' : 'New source record'}</DialogTitle>
           <DialogDescription>

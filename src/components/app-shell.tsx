@@ -169,7 +169,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               size="icon"
               onClick={() => setView('bookmarks')}
               aria-label={`${t('shell.bookmarks')}${bookmarkCount > 0 ? ` — ${bookmarkCount} ${t('shell.bookmarksSaved')}` : ''}`}
-              className="relative text-muted-foreground hover:text-foreground"
+              className="relative h-11 w-11 text-muted-foreground hover:text-foreground"
             >
               <Bookmark className="h-[1.15rem] w-[1.15rem]" />
               {bookmarkCount > 0 && (
@@ -196,7 +196,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                     : 'Switch interface language (currently English)'
               }
               title="English · العربية · ثنائي"
-              className="relative text-muted-foreground hover:text-foreground"
+              className="relative h-11 w-11 text-muted-foreground hover:text-foreground"
             >
               <Languages className="h-[1.15rem] w-[1.15rem]" />
               {lang !== 'en' && (
@@ -213,7 +213,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               size="icon"
               onClick={() => setView('search')}
               aria-label={t('shell.search')}
-              className="text-muted-foreground hover:text-foreground"
+              className="h-11 w-11 text-muted-foreground hover:text-foreground"
             >
               <Search className="h-[1.15rem] w-[1.15rem]" />
             </Button>
@@ -222,7 +222,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               size="icon"
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               aria-label={lang === 'ar' ? 'تبديل الوضع الليلي' : 'Toggle dark mode'}
-              className="text-muted-foreground hover:text-foreground"
+              className="h-11 w-11 text-muted-foreground hover:text-foreground"
             >
               {mounted && theme === 'dark' ? <Sun className="h-[1.15rem] w-[1.15rem]" /> : <Moon className="h-[1.15rem] w-[1.15rem]" />}
             </Button>

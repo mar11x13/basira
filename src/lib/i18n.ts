@@ -84,6 +84,10 @@ const DICT: Record<string, Entry> = {
   'shell.home': { en: 'BASIRA home', ar: 'صفحة بصيرة الرئيسية' },
   'shell.offline': { en: 'Offline — cached content', ar: 'غير متصل — محتوى مخزّن' },
   'shell.offlineShort': { en: 'Offline', ar: 'غير متصل' },
+  'install.subtitle': {
+    en: 'Faster reading and an app-like window, with saved content available offline.',
+    ar: 'قراءة أسرع ووضع يشبه التطبيق، مع عمل أوفلاين للمحتوى المحفوظ.',
+  },
   'shell.educationalTool': {
     en: 'Educational tool · not a fatwa service.',
     ar: 'أداة تعليمية · ليست خدمة فتاوى.',

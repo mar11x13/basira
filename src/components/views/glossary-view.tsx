@@ -122,7 +122,7 @@ export function GlossaryView() {
             hint="Your connection may have dropped — please try again."
           />
           <Button variant="outline" size="lg" className="mt-1 rounded-xl" onClick={load}>
-            <RotateCcw className="h-4 w-4 mr-2" aria-hidden />
+            <RotateCcw className="h-4 w-4 me-2" aria-hidden />
             Try again
           </Button>
         </div>
@@ -191,7 +191,7 @@ export function GlossaryView() {
                   setActiveCategory('all');
                 }}
               >
-                <RotateCcw className="h-3.5 w-3.5 mr-1.5" aria-hidden />
+                <RotateCcw className="h-3.5 w-3.5 me-1.5" aria-hidden />
                 Clear search
               </Button>
             </div>

@@ -8,6 +8,7 @@ import { ArabicText } from '@/components/shared/arabic-text';
 import { ViewHeader, SearchBar, EmptyState } from '@/components/shared/view-header';
 import { SURAHS, getSurah, QURAN_INTEGRATION_NOTE, ayahAudioUrl, RECITER_NOTE, type SurahMeta } from '@/lib/surahs';
 import { useToast } from '@/hooks/use-toast';
+import { useReaderPrefs, READER_ARABIC_SIZES } from '@/hooks/use-reader-prefs';
 import type { SourceRecord } from '@/lib/types';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Button } from '@/components/ui/button';
@@ -20,8 +21,12 @@ import {
   BookOpen,
   Bookmark,
   BookmarkCheck,
+  Check,
   ChevronLeft,
   CloudOff,
+  Copy,
+  Eye,
+  EyeOff,
   Headphones,
   Info,
   Loader2,
@@ -136,7 +141,7 @@ function ErrorState({ onRetry, what }: { onRetry: () => void; what: string }) {
         Please check your connection and try again.
       </p>
       <Button onClick={onRetry} variant="outline" className="h-11 px-5 mt-4">
-        <RefreshCw className="h-4 w-4 mr-2" aria-hidden />
+        <RefreshCw className="h-4 w-4 me-2" aria-hidden />
         Try again
       </Button>
     </div>
@@ -293,6 +298,8 @@ function SurahReader({
   const toggleBookmark = useApp((s) => s.toggleBookmark);
   const openRecordBySlug = useApp((s) => s.openRecordBySlug);
   const bookmarkSlugs = useApp((s) => s.bookmarkSlugs);
+  const { prefs, cycleSize, update: updateReaderPrefs } = useReaderPrefs();
+  const [copiedAyah, setCopiedAyah] = React.useState<number | null>(null);
 
   const [data, setData] = React.useState<SurahResponse | null>(null);
   const [state, setState] = React.useState<'loading' | 'ready' | 'error'>('loading');
@@ -468,6 +475,21 @@ function SurahReader({
 
   const surahMeta = data?.surah ?? getSurah(surahNumber);
 
+  const copyAyah = async (a: ReaderAyah) => {
+    const ref = `${surahMeta?.transliteration ?? `Surah ${surahNumber}`} ${surahNumber}:${a.numberInSurah}`;
+    const text = `${a.arabic}\n\n${a.translation}\n\n— ${ref} (Qur'an, via BASIRA)`;
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedAyah(a.numberInSurah);
+      setTimeout(() => setCopiedAyah(null), 1800);
+      toast({ title: 'Ayah copied', description: `${ref} copied with Arabic and translation.` });
+    } catch {
+      toast({ title: 'Could not copy', description: 'Your browser blocked clipboard access.' });
+    }
+  };
+
+  const arabicStep = READER_ARABIC_SIZES[prefs.arabicSize];
+
   return (
     <section aria-label={`Surah ${surahNumber} reader`}>
       {/* Reader toolbar */}
@@ -475,13 +497,53 @@ function SurahReader({
         <Button
           variant="ghost"
           onClick={onBack}
-          className="h-11 px-3 -ml-2 text-muted-foreground hover:text-foreground"
+          className="h-11 px-3 -ms-2 text-muted-foreground hover:text-foreground"
           aria-label="Back to the surah list"
         >
-          <ChevronLeft className="h-5 w-5 mr-1" aria-hidden />
+          <ChevronLeft className="h-5 w-5 me-1 rtl:rotate-180" aria-hidden />
           All surahs
         </Button>
         <div className="flex items-center gap-2 flex-wrap">
+          {/* Display settings — Arabic size + translation visibility */}
+          <div
+            className="flex items-center rounded-full border border-border/70 bg-card/70 p-0.5"
+            role="group"
+            aria-label="Reading display settings"
+          >
+            <button
+              type="button"
+              onClick={() => cycleSize(-1)}
+              disabled={prefs.arabicSize === 0}
+              className="h-10 min-w-11 px-2 rounded-full text-sm font-semibold text-muted-foreground enabled:hover:text-foreground enabled:hover:bg-muted/70 transition-colors focus-ring disabled:opacity-40"
+              aria-label="Decrease Arabic text size"
+            >
+              <span aria-hidden>A−</span>
+              <span className="sr-only">Decrease Arabic text size</span>
+            </button>
+            <span className="text-[0.62rem] font-semibold text-muted-foreground tabular-nums px-0.5" aria-hidden>
+              {prefs.arabicSize + 1}/4
+            </span>
+            <button
+              type="button"
+              onClick={() => cycleSize(1)}
+              disabled={prefs.arabicSize === 3}
+              className="h-10 min-w-11 px-2 rounded-full text-base font-semibold text-muted-foreground enabled:hover:text-foreground enabled:hover:bg-muted/70 transition-colors focus-ring disabled:opacity-40"
+              aria-label="Increase Arabic text size"
+            >
+              <span aria-hidden>A+</span>
+              <span className="sr-only">Increase Arabic text size</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => updateReaderPrefs({ showTranslation: !prefs.showTranslation })}
+              className="h-10 min-w-11 px-2.5 rounded-full text-muted-foreground hover:text-foreground hover:bg-muted/70 transition-colors focus-ring"
+              aria-pressed={prefs.showTranslation}
+              aria-label={prefs.showTranslation ? 'Hide the English translation' : 'Show the English translation'}
+              title={prefs.showTranslation ? 'Hide translation' : 'Show translation'}
+            >
+              {prefs.showTranslation ? <Eye className="h-4 w-4" aria-hidden /> : <EyeOff className="h-4 w-4" aria-hidden />}
+            </button>
+          </div>
           {typeof lastRead === 'number' && (
             <span className="inline-flex items-center gap-1.5 text-xs text-muted-foreground bg-muted/60 border border-border/60 rounded-full px-3 py-2">
               <BookmarkCheck className="h-3.5 w-3.5 text-primary" aria-hidden />
@@ -497,9 +559,9 @@ function SurahReader({
               aria-label={audioCurrent != null ? 'Pause the recitation' : `Listen to ${surahMeta?.transliteration ?? 'this surah'} — recitation by Mishary Rashid Alafasy`}
             >
               {audioCurrent != null && audioPlaying ? (
-                <Pause className="h-4 w-4 mr-1.5" aria-hidden />
+                <Pause className="h-4 w-4 me-1.5" aria-hidden />
               ) : (
-                <Headphones className="h-4 w-4 mr-1.5" aria-hidden />
+                <Headphones className="h-4 w-4 me-1.5" aria-hidden />
               )}
               {audioCurrent != null ? (audioPlaying ? 'Pause recitation' : 'Resume') : 'Listen'}
             </Button>
@@ -655,10 +717,10 @@ function SurahReader({
                           aria-label={`Set ayah ${a.numberInSurah} as your last read position`}
                         >
                           {marking === a.numberInSurah ? (
-                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" aria-hidden />
+                            <Loader2 className="h-4 w-4 me-1.5 animate-spin" aria-hidden />
                           ) : (
                             <BookmarkCheck
-                              className={cn('h-4 w-4 mr-1.5', isLastRead && 'fill-primary/20')}
+                              className={cn('h-4 w-4 me-1.5', isLastRead && 'fill-primary/20')}
                               aria-hidden
                             />
                           )}
@@ -668,8 +730,14 @@ function SurahReader({
                       </div>
                     </div>
 
-                    <ArabicText text={a.arabic} size="lg" />
-                    <p className="text-foreground/90 text-[0.95rem] leading-relaxed">{a.translation}</p>
+                    <ArabicText
+                      text={a.arabic}
+                      size={arabicStep.size}
+                      className={arabicStep.className}
+                    />
+                    {prefs.showTranslation && (
+                      <p className="text-foreground/90 text-[0.95rem] leading-relaxed">{a.translation}</p>
+                    )}
 
                     {a.excerptOnly && (
                       <p className="text-xs italic text-muted-foreground mt-2">
@@ -687,7 +755,7 @@ function SurahReader({
                           aria-pressed={bookmarked}
                           aria-label={bookmarked ? 'Remove this ayah from bookmarks' : 'Bookmark this ayah'}
                         >
-                          <Bookmark className={cn('h-4 w-4 mr-1.5', bookmarked && 'fill-current text-gold')} aria-hidden />
+                          <Bookmark className={cn('h-4 w-4 me-1.5', bookmarked && 'fill-current text-gold')} aria-hidden />
                           {bookmarked ? 'Saved' : 'Save'}
                         </Button>
                         <Button
@@ -697,10 +765,24 @@ function SurahReader({
                           onClick={() => void openRecordBySlug(a.slug!)}
                           aria-label="Inspect the verified source record for this ayah"
                         >
-                          <BookOpen className="h-4 w-4 mr-1.5" aria-hidden />
+                          <BookOpen className="h-4 w-4 me-1.5" aria-hidden />
                           View source
                         </Button>
-                        <span className="ml-auto text-[0.65rem] text-muted-foreground">Curated &amp; verified</span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-11 px-4 text-muted-foreground hover:text-foreground"
+                          onClick={() => void copyAyah(a)}
+                          aria-label={`Copy ayah ${a.numberInSurah} with Arabic and translation`}
+                        >
+                          {copiedAyah === a.numberInSurah ? (
+                            <Check className="h-4 w-4 me-1.5 text-primary" aria-hidden />
+                          ) : (
+                            <Copy className="h-4 w-4 me-1.5" aria-hidden />
+                          )}
+                          {copiedAyah === a.numberInSurah ? 'Copied' : 'Copy'}
+                        </Button>
+                        <span className="ms-auto text-[0.65rem] text-muted-foreground">Curated &amp; verified</span>
                       </footer>
                     )}
                   </article>
@@ -721,7 +803,7 @@ function SurahReader({
       {/* ————— Sticky recitation player (fixed above the mobile nav) ————— */}
       {audioCurrent != null && surahMeta && (
         <div
-          className="fixed left-0 right-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] lg:bottom-5 z-40 px-3 sm:px-4 animate-in slide-in-from-bottom-3 fade-in duration-300"
+          className="fixed inset-x-0 bottom-[calc(4.25rem+env(safe-area-inset-bottom))] lg:bottom-5 z-40 px-3 sm:px-4 animate-in slide-in-from-bottom-3 fade-in duration-300"
           role="region"
           aria-label="Recitation player"
         >
@@ -924,7 +1006,7 @@ function SearchPanel() {
           aria-label="Search"
         >
           {loading ? <Loader2 className="h-4 w-4 animate-spin" aria-hidden /> : <Search className="h-4 w-4" aria-hidden />}
-          <span className="hidden sm:inline ml-2">Search</span>
+          <span className="hidden sm:inline ms-2">Search</span>
         </Button>
       </div>
 

@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Toaster } from "@/components/ui/toaster";
 import { ThemeProvider } from "@/components/theme-provider";
+import { PwaRegister } from "@/components/pwa-register";
 
 export const metadata: Metadata = {
   title: "BASIRA — Islamic Guidance, Verified",
@@ -12,6 +13,16 @@ export const metadata: Metadata = {
   icons: {
     icon: [
       {
+        url: "/icons/icon-192.png",
+        type: "image/png",
+        sizes: "192x192",
+      },
+      {
+        url: "/icons/icon-512.png",
+        type: "image/png",
+        sizes: "512x512",
+      },
+      {
         url:
           "data:image/svg+xml," +
           encodeURIComponent(
@@ -20,12 +31,19 @@ export const metadata: Metadata = {
         type: "image/svg+xml",
       },
     ],
+    apple: "/icons/icon-192.png",
   },
   openGraph: {
     title: "BASIRA — Islamic Guidance, Verified",
     description: "Qur'an, Sahih al-Bukhari hadith, duas and grounded answers with traceable sources.",
     siteName: "BASIRA",
     type: "website",
+  },
+  manifest: "/manifest.webmanifest",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "BASIRA",
   },
 };
 
@@ -58,6 +76,7 @@ export default function RootLayout({
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem disableTransitionOnChange>
           {children}
           <Toaster />
+          <PwaRegister />
         </ThemeProvider>
       </body>
     </html>

@@ -215,7 +215,7 @@ function DhikrCounter({
             <p className="mt-1 flex items-center gap-1.5 flex-wrap text-xs text-muted-foreground">
               <button
                 onClick={() => openRecord(record)}
-                className="font-medium text-foreground/70 hover:text-primary transition-colors text-left focus-ring rounded-sm"
+                className="tap-area font-medium text-foreground/70 hover:text-primary transition-colors text-start focus-ring rounded-sm"
                 aria-label={`Inspect source: ${record.citation}`}
               >
                 {record.citation}
@@ -226,7 +226,7 @@ function DhikrCounter({
           <Button
             variant="ghost"
             size="icon"
-            className="h-9 w-9 shrink-0 text-muted-foreground hover:text-foreground"
+            className="h-11 w-11 shrink-0 text-muted-foreground hover:text-foreground"
             onClick={() => openRecord(record)}
             aria-label="Inspect full source"
           >
@@ -334,7 +334,7 @@ function DhikrCounter({
               <Button
                 variant="ghost"
                 size="icon"
-                className="h-9 w-9 text-muted-foreground hover:text-foreground"
+                className="h-11 w-11 text-muted-foreground hover:text-foreground"
                 onClick={reset}
                 disabled={count === 0}
                 aria-label={`Reset ${record.title} counter to zero`}
@@ -435,7 +435,7 @@ export function DhikrView() {
             <TabsTrigger
               key={key}
               value={key}
-              className="flex-none px-3 h-9 text-[0.8rem] gap-1.5"
+              className="flex-none px-3 h-11 text-[0.8rem] gap-1.5"
             >
               <Icon className="h-3.5 w-3.5" aria-hidden />
               {label}

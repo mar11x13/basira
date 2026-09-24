@@ -143,7 +143,7 @@ export function SourceCard({
           <TypeBadge type={record.sourceType} />
           <button
             onClick={() => (onCitationClick ? onCitationClick(record) : openRecord(record))}
-            className="text-sm font-semibold text-foreground hover:text-primary transition-colors text-left leading-snug focus-ring rounded-sm"
+            className="tap-area text-sm font-semibold text-foreground hover:text-primary transition-colors text-start leading-snug focus-ring rounded-sm"
             aria-label={`Inspect source: ${record.citation}`}
           >
             {record.citation}
@@ -189,50 +189,50 @@ export function SourceCard({
         )}
 
         {/* actions */}
-        <div className="flex items-center gap-1 pt-1">
+        <div className="flex items-center gap-1 pt-1 flex-wrap">
           {record.explanation ? (
             <Button
               variant="ghost"
               size="sm"
-              className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+              className="h-11 px-2.5 text-xs text-muted-foreground hover:text-foreground"
               onClick={() => setExpanded((e) => !e)}
               aria-expanded={expanded}
             >
-              <ChevronDown className={cn('h-3.5 w-3.5 mr-1 transition-transform', expanded && 'rotate-180')} />
+              <ChevronDown className={cn('h-3.5 w-3.5 me-1 transition-transform', expanded && 'rotate-180')} />
               {expanded ? 'Less' : 'Explanation'}
             </Button>
           ) : null}
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="h-11 px-2.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={copyCitation}
           >
-            {copied ? <Check className="h-3.5 w-3.5 mr-1 text-primary" /> : <Copy className="h-3.5 w-3.5 mr-1" />}
+            {copied ? <Check className="h-3.5 w-3.5 me-1 text-primary" /> : <Copy className="h-3.5 w-3.5 me-1" />}
             {copied ? 'Copied' : 'Copy'}
           </Button>
           <Button
             variant="ghost"
             size="sm"
             className={cn(
-              'h-7 px-2 text-xs ml-auto',
+              'h-11 px-2.5 text-xs ms-auto',
               bookmarked ? 'text-gold hover:text-gold' : 'text-muted-foreground hover:text-foreground'
             )}
             onClick={() => toggleBookmark(record.slug ?? record.id)}
             aria-label={bookmarked ? 'Remove bookmark' : 'Save to bookmarks'}
             aria-pressed={bookmarked}
           >
-            <BookmarkIcon className={cn('h-3.5 w-3.5 mr-1', bookmarked && 'fill-current')} />
+            <BookmarkIcon className={cn('h-3.5 w-3.5 me-1', bookmarked && 'fill-current')} />
             {bookmarked ? 'Saved' : 'Save'}
           </Button>
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 px-2 text-xs text-muted-foreground hover:text-foreground"
+            className="h-11 px-2.5 text-xs text-muted-foreground hover:text-foreground"
             onClick={() => (onCitationClick ? onCitationClick(record) : openRecord(record))}
             aria-label="Inspect full source"
           >
-            <BookOpen className="h-3.5 w-3.5 mr-1" />
+            <BookOpen className="h-3.5 w-3.5 me-1" />
             Source
           </Button>
         </div>
@@ -257,7 +257,7 @@ export function CitationChip({
         <TooltipTrigger asChild>
           <button
             onClick={() => onClick?.(record)}
-            className="inline-flex items-center mx-0.5 align-baseline rounded-full border border-primary/40 bg-primary/10 text-primary text-[0.7rem] font-semibold px-1.5 h-[1.15em] leading-none hover:bg-primary/20 transition-colors focus-ring"
+            className="inline-flex items-center mx-0.5 align-baseline rounded-full border border-primary/40 bg-primary/10 text-primary text-[0.7rem] font-semibold px-2 min-h-7 leading-none hover:bg-primary/20 transition-colors focus-ring"
             aria-label={`Source ${index}: ${record?.citation ?? 'unverified'}`}
           >
             S{index}

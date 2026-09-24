@@ -414,12 +414,12 @@ export function SettingsView() {
                     )
                   }
                 >
-                  <SelectTrigger id="language-select" className="w-full h-11 rounded-xl bg-card">
+                  <SelectTrigger id="language-select" className="w-full h-11! rounded-xl bg-card">
                     <SelectValue placeholder="Choose a language" />
                   </SelectTrigger>
                   <SelectContent>
                     {LANGUAGE_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
+                      <SelectItem key={o.value} value={o.value} className="py-2.5">
                         <span className="flex items-center justify-between gap-3 w-full">
                           <span>{o.label}</span>
                           <span className="text-muted-foreground font-arabic">{o.labelAr}</span>
@@ -452,12 +452,12 @@ export function SettingsView() {
                     )
                   }
                 >
-                  <SelectTrigger id="madhhab-select" className="w-full h-11 rounded-xl bg-card">
+                  <SelectTrigger id="madhhab-select" className="w-full h-11! rounded-xl bg-card">
                     <SelectValue placeholder="Choose a school" />
                   </SelectTrigger>
                   <SelectContent>
                     {MADHHAB_OPTIONS.map((o) => (
-                      <SelectItem key={o.value} value={o.value}>
+                      <SelectItem key={o.value} value={o.value} className="py-2.5">
                         {o.label}
                       </SelectItem>
                     ))}
@@ -508,12 +508,12 @@ export function SettingsView() {
                 Text size
               </Label>
               <Select value={textSize} onValueChange={(v) => applyTextSize(v as TextSize)}>
-                <SelectTrigger id="text-size-select" className="w-full h-11 rounded-xl bg-card">
+                <SelectTrigger id="text-size-select" className="w-full h-11! rounded-xl bg-card">
                   <SelectValue placeholder="Choose text size" />
                 </SelectTrigger>
                 <SelectContent>
                   {TEXT_SIZE_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>
+                    <SelectItem key={o.value} value={o.value} className="py-2.5">
                       {o.label}
                     </SelectItem>
                   ))}
@@ -539,12 +539,12 @@ export function SettingsView() {
               </Label>
               {booted ? (
                 <Select value={profile?.prayerMethod ?? 'MWL'} onValueChange={(v) => void save({ prayerMethod: v }, 'Calculation method updated.')}>
-                  <SelectTrigger id="method-select" className="w-full h-11 rounded-xl bg-card">
+                  <SelectTrigger id="method-select" className="w-full h-11! rounded-xl bg-card">
                     <SelectValue placeholder="Choose a method" />
                   </SelectTrigger>
                   <SelectContent>
                     {PRAYER_METHODS.map((m) => (
-                      <SelectItem key={m.key} value={m.key}>
+                      <SelectItem key={m.key} value={m.key} className="py-2.5">
                         {m.name}
                       </SelectItem>
                     ))}
@@ -606,7 +606,7 @@ export function SettingsView() {
                   onClick={locateMe}
                   disabled={locating || !booted}
                 >
-                  {locating ? <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden /> : <LocateFixed className="h-4 w-4 mr-2" aria-hidden />}
+                  {locating ? <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden /> : <LocateFixed className="h-4 w-4 me-2" aria-hidden />}
                   {locating ? 'Locating…' : 'Use my location'}
                 </Button>
                 <Button
@@ -616,7 +616,7 @@ export function SettingsView() {
                   onClick={() => void save({ clearLocation: true }, 'Location cleared — using Makkah (default).')}
                   disabled={!booted || profile?.locationLat == null}
                 >
-                  <XCircle className="h-4 w-4 mr-2" aria-hidden />
+                  <XCircle className="h-4 w-4 me-2" aria-hidden />
                   Clear location
                 </Button>
               </div>
@@ -693,7 +693,7 @@ export function SettingsView() {
                     onClick={() => void requestPermission()}
                     disabled={permBusy}
                   >
-                    {permBusy ? <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden /> : <BellRing className="h-4 w-4 mr-2" aria-hidden />}
+                    {permBusy ? <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden /> : <BellRing className="h-4 w-4 me-2" aria-hidden />}
                     Enable browser notifications
                   </Button>
                 )}
@@ -745,7 +745,7 @@ export function SettingsView() {
               <AlertDialog>
                 <AlertDialogTrigger asChild>
                   <Button variant="destructive" size="default" className="h-11 rounded-xl shrink-0">
-                    <Trash2 className="h-4 w-4 mr-2" aria-hidden />
+                    <Trash2 className="h-4 w-4 me-2" aria-hidden />
                     Delete all my data
                   </Button>
                 </AlertDialogTrigger>
@@ -767,7 +767,7 @@ export function SettingsView() {
                       }}
                       disabled={deleting}
                     >
-                      {deleting ? <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4 mr-2" aria-hidden />}
+                      {deleting ? <Loader2 className="h-4 w-4 me-2 animate-spin" aria-hidden /> : <Trash2 className="h-4 w-4 me-2" aria-hidden />}
                       {deleting ? 'Deleting…' : 'Yes, delete everything'}
                     </AlertDialogAction>
                   </AlertDialogFooter>
@@ -813,7 +813,7 @@ export function SettingsView() {
               className="h-11 rounded-xl"
               onClick={() => setView('admin')}
             >
-              <Compass className="h-4 w-4 mr-2 text-gold" aria-hidden />
+              <Compass className="h-4 w-4 me-2 text-gold" aria-hidden />
               Admin panel
             </Button>
           </div>

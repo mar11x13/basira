@@ -6,6 +6,13 @@ import type { Profile, SourceRecord, BookmarkItem } from '@/lib/types';
 // ============================================================================
 // BASIRA app store — client-side navigation + session state.
 // The app is a single visible route ("/"); views are sections switched here.
+//
+// Mobile back-button contract:
+//  - navigating to a view pushes a history entry → browser Back returns to
+//    the previous BASIRA view (never unexpectedly exits the app);
+//  - opening the citation inspector pushes its own entry → Back closes the
+//    modal first;
+//  - Back on Home behaves like a normal site (leaves the page).
 // ============================================================================
 
 export type ViewKey =
@@ -72,6 +79,50 @@ interface AppState {
 const DAILY_CACHE_KEY = 'basira:daily';
 const PROGRESS_CACHE_KEY = 'basira:progress-cache';
 
+// ---------------------------------------------------------------------------
+// History integration (mobile back button). We only manage OUR entries:
+// { basiraView } for view switches and { basiraRecord: true } for the citation
+// inspector. Anything else in history is left untouched.
+// ---------------------------------------------------------------------------
+type BasiraHistoryState = { basiraView?: ViewKey; basiraRecord?: boolean } & Record<string, unknown>;
+
+let suppressHistoryPush = false;
+
+function pushViewHistory(view: ViewKey) {
+  if (typeof window === 'undefined' || suppressHistoryPush) return;
+  try {
+    window.history.pushState({ basiraView: view }, '');
+  } catch {
+    /* history unavailable (e.g. security contexts) — navigation still works */
+  }
+}
+
+function installPopstateHandler(store: ReturnType<typeof useApp>) {
+  if (typeof window === 'undefined') return;
+  window.addEventListener('popstate', (e) => {
+    const state = (e.state ?? null) as BasiraHistoryState | null;
+    const s = store.getState();
+
+    // 1. Back closes an open citation inspector first.
+    if (s.inspecting) {
+      if (!state?.basiraRecord) {
+        suppressHistoryPush = true;
+        s.closeRecord();
+        suppressHistoryPush = false;
+      }
+      return;
+    }
+
+    // 2. Back restores the previous BASIRA view when our own entry is there.
+    if (state?.basiraView && state.basiraView !== s.view) {
+      suppressHistoryPush = true;
+      s.setView(state.basiraView);
+      suppressHistoryPush = false;
+    }
+    // 3. A non-BASIRA entry (or no state): leave browser behavior untouched.
+  });
+}
+
 export const useApp = create<AppState>((set, get) => ({
   view: 'home',
   viewParams: {},
@@ -87,8 +138,10 @@ export const useApp = create<AppState>((set, get) => ({
   daily: null,
 
   setView: (view, params = {}) => {
+    const prev = get().view;
     set({ view, viewParams: params });
     if (typeof window !== 'undefined') {
+      if (prev !== view) pushViewHistory(view);
       window.scrollTo({ top: 0 });
     }
   },
@@ -223,9 +276,25 @@ export const useApp = create<AppState>((set, get) => ({
 
   isBookmarked: (record) => get().bookmarkSlugs.has(record.slug ?? record.id),
 
-  openRecord: (record) => set({ inspecting: record }),
+  openRecord: (record) => {
+    if (typeof window !== 'undefined' && !suppressHistoryPush) {
+      try {
+        window.history.pushState({ basiraView: get().view, basiraRecord: true }, '');
+      } catch {
+        /* ignore */
+      }
+    }
+    set({ inspecting: record });
+  },
 
   openRecordBySlug: async (slug) => {
+    if (typeof window !== 'undefined' && !suppressHistoryPush) {
+      try {
+        window.history.pushState({ basiraView: get().view, basiraRecord: true }, '');
+      } catch {
+        /* ignore */
+      }
+    }
     try {
       const res = await fetch(`/api/content/${encodeURIComponent(slug)}`, { cache: 'no-store' });
       if (res.ok) {
@@ -237,7 +306,25 @@ export const useApp = create<AppState>((set, get) => ({
     }
   },
 
-  closeRecord: () => set({ inspecting: null }),
+  closeRecord: () => {
+    // If the current history entry is the one the modal pushed, consume it so
+    // the next Back press doesn't hit a stale modal entry.
+    if (typeof window !== 'undefined' && !suppressHistoryPush) {
+      const st = window.history.state as BasiraHistoryState | null;
+      if (st?.basiraRecord) {
+        suppressHistoryPush = true;
+        try {
+          window.history.back();
+        } catch {
+          /* ignore */
+        }
+        suppressHistoryPush = false;
+        set({ inspecting: null });
+        return;
+      }
+    }
+    set({ inspecting: null });
+  },
 
   loadDaily: async (force = false) => {
     const today = new Date().toISOString().slice(0, 10);
@@ -261,3 +348,5 @@ export const useApp = create<AppState>((set, get) => ({
 
   setOnline: (online) => set({ online }),
 }));
+
+installPopstateHandler(useApp);

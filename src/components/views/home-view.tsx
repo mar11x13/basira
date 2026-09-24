@@ -83,8 +83,33 @@ function PrayerStrip() {
   const next = React.useMemo(() => nextPrayer(times, now), [times, now]);
 
   React.useEffect(() => {
-    const t = setInterval(() => setNow(new Date()), 30_000);
-    return () => clearInterval(t);
+    // Battery-conscious ticking: only tick while the page is visible; resync
+    // immediately when it becomes visible again (so the countdown is never
+    // stale after the user returns from another tab/app).
+    const tick = () => setNow(new Date());
+    let t: number | undefined;
+    const start = () => {
+      if (t == null) t = window.setInterval(tick, 30_000);
+    };
+    const stop = () => {
+      if (t != null) {
+        clearInterval(t);
+        t = undefined;
+      }
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else {
+        tick();
+        start();
+      }
+    };
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
   }, []);
 
   // Time-aware cell styling: passed prayers rest dimmed, the next prayer glows.

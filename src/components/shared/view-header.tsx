@@ -39,7 +39,7 @@ export function ViewHeader({
           <Button
             variant="ghost"
             size="icon"
-            className="mt-1 -ms-2 text-muted-foreground"
+            className="mt-1 -ms-2 h-11 w-11 text-muted-foreground"
             onClick={() => setView('home')}
             aria-label={arabic ? 'العودة إلى الرئيسية' : 'Back to home'}
           >
@@ -90,7 +90,7 @@ export function SearchBar({
       }}
       role="search"
     >
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden />
+      <Search className="absolute start-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" aria-hidden />
       <Input
         type="search"
         value={value}
@@ -98,7 +98,7 @@ export function SearchBar({
         placeholder={placeholder}
         autoFocus={autoFocus}
         aria-label={ariaLabel ?? placeholder}
-        className="pl-10 h-11 rounded-xl bg-card border-border/80 focus-visible:ring-primary/40"
+        className="ps-10 h-11 rounded-xl bg-card border-border/80 focus-visible:ring-primary/40"
       />
     </form>
   );

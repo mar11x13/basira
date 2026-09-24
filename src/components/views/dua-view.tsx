@@ -136,11 +136,11 @@ export function DuaView() {
             <Button
               variant="ghost"
               size="sm"
-              className="h-11 px-3 -ml-2 text-muted-foreground hover:text-foreground"
+              className="h-11 px-3 -ms-2 text-muted-foreground hover:text-foreground"
               onClick={() => setCategory(null)}
               aria-label="Back to all dua categories"
             >
-              <ArrowLeft className="h-4 w-4" aria-hidden />
+              <ArrowLeft className="h-4 w-4 rtl:rotate-180" aria-hidden />
               All categories
             </Button>
             <div className="flex items-center gap-2 min-w-0">
@@ -149,7 +149,7 @@ export function DuaView() {
               </span>
               <h2 className="font-display text-xl font-semibold text-foreground leading-tight">
                 {activeCategory.label}
-                <span className="font-arabic text-base text-muted-foreground ml-2">{activeCategory.ar}</span>
+                <span className="font-arabic text-base text-muted-foreground ms-2">{activeCategory.ar}</span>
               </h2>
             </div>
           </div>

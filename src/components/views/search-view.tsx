@@ -80,7 +80,7 @@ function SearchError({ message, onRetry }: { message: string; onRetry: () => voi
           onClick={onRetry}
           className="min-h-11 shrink-0 rounded-lg px-4"
         >
-          <RotateCcw className="mr-1.5 h-4 w-4" aria-hidden />
+          <RotateCcw className="me-1.5 h-4 w-4" aria-hidden />
           Retry
         </Button>
       </CardContent>

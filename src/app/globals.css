@@ -258,3 +258,80 @@ html[data-text-size='large'] {
 html[data-text-size='xlarge'] {
   font-size: 20px;
 }
+
+/* ============================================================================
+   Mobile-first engineering pass — touch, scrolling, safe viewport units.
+   ============================================================================ */
+
+/* Tap targets: kill the legacy 300ms double-tap-zoom delay WITHOUT hijacking
+   scroll or pinch-zoom (accessibility zoom stays fully available). */
+button,
+a,
+[role='button'],
+[role='tab'],
+[role='switch'],
+[role='checkbox'],
+summary,
+label:has(input[type='checkbox']),
+label:has(input[type='radio']) {
+  touch-action: manipulation;
+}
+
+/* Horizontal overflow guard: no accidental page-wide sideways scroll. `clip`
+   (not `hidden`) avoids creating a scroll container that traps swipe gestures. */
+html,
+body {
+  overflow-x: clip;
+  /* Momentum scrolling for any inner scroll regions on legacy iOS. */
+  -webkit-text-size-adjust: 100%;
+}
+
+/* Dynamic viewport heights — the `dvh` line wins where supported; the plain
+   `vh` line is the fallback for older browsers. Used by dialogs/sheets so the
+   browser URL bar never crops their controls. */
+.max-h-screen-safe {
+  max-height: 88vh;
+  max-height: 88dvh;
+}
+.min-h-screen-safe {
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+.min-h-stable {
+  /* For full-height hero areas: svh avoids the classic "jump" when the mobile
+     URL bar collapses (dvh would resize live and cause layout shifts). */
+  min-height: 100svh;
+}
+
+/* Minimum comfortable touch target for tight icon controls (44px target with
+   a visually smaller glyph — the padding is invisible until focus/hover). */
+.tap-target {
+  position: relative;
+  min-width: 44px;
+  min-height: 44px;
+}
+
+/* Inline links (citations) keep their text size but gain an invisible
+   ~20px-taller tap halo — full 44px reach with zero visual bloat. The
+   z-index lifts the halo above adjacent flowing content so taps land on
+   the link, not the paragraph below it. */
+.tap-area {
+  position: relative;
+}
+.tap-area::after {
+  content: '';
+  position: absolute;
+  inset: -10px -8px;
+  z-index: 1;
+}
+
+/* Smooth momentum scrolling for designated scroll regions. */
+.scroll-momentum {
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+}
+
+/* Sticky mobile headers/navs that must not let content scroll under them. */
+.no-underscroll {
+  overscroll-behavior-y: contain;
+}
