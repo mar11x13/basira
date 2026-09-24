@@ -85,9 +85,12 @@ model UserProfile {
   translationPref String    @default("simple")
   prayerMethod    String    @default("MWL")
   asrFactor       Int       @default(1) // 1 = majority schools, 2 = Hanafi shadow factor
+  highLatRule     String    @default("auto") // auto | middle | seventh | twilight
+  timeFormat      String    @default("12h") // 12h | 24h
   locationLat     Float?
   locationLng     Float?
   locationName    String?
+  locationTimezone String? // IANA zone of the prayer location (e.g. "Asia/Qatar")
   notifyPrayer    Boolean   @default(false)
   notifyQuran     Boolean   @default(false)
   notifyDhikr     Boolean   @default(false)

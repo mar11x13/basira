@@ -4,7 +4,8 @@ import * as React from 'react';
 import { useApp } from '@/lib/store';
 import { ViewHeader } from '@/components/shared/view-header';
 import { useToast } from '@/hooks/use-toast';
-import { PRAYER_METHODS, getMethod } from '@/lib/prayer-times';
+import { PRAYER_METHODS, getMethod, resolveMethodKey, HIGH_LAT_RULES } from '@/lib/prayer/core';
+import { CityPicker } from '@/components/prayer/city-picker';
 import { LANGUAGE_OPTIONS, useUiLanguage, type UiLanguage } from '@/lib/i18n';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -239,11 +240,20 @@ export function SettingsView() {
     setLocating(true);
     navigator.geolocation.getCurrentPosition(
       (pos) => {
+        // Persist the device's IANA zone alongside GPS coordinates — the
+        // physical presence zone matches geolocated coordinates.
+        let deviceTz: string | null = null;
+        try {
+          deviceTz = Intl.DateTimeFormat().resolvedOptions().timeZone ?? null;
+        } catch {
+          deviceTz = null;
+        }
         void save(
           {
             locationLat: Number(pos.coords.latitude.toFixed(5)),
             locationLng: Number(pos.coords.longitude.toFixed(5)),
             locationName: 'My location',
+            ...(deviceTz ? { locationTimezone: deviceTz } : {}),
           },
           'Location saved — prayer times now use your position.'
         ).finally(() => setLocating(false));
@@ -340,10 +350,12 @@ export function SettingsView() {
   }, []);
 
   const booted = !!profile;
-  const selectedMethod = getMethod(profile?.prayerMethod ?? 'MWL');
+  const resolvedMethodKey = resolveMethodKey(profile?.prayerMethod ?? 'MWL');
+  const selectedMethod = getMethod(resolvedMethodKey);
+  const resolvedHighLat = HIGH_LAT_RULES.find((r) => r.key === profile?.highLatRule) ?? HIGH_LAT_RULES[0];
   const locationLabel =
     profile?.locationLat != null
-      ? profile.locationName || `Coordinates ${profile.locationLat.toFixed(2)}, ${profile.locationLng?.toFixed(2) ?? '?'}`
+      ? `${profile.locationName || `Coordinates ${profile.locationLat.toFixed(2)}, ${profile.locationLng?.toFixed(2) ?? '?'}`}${profile.locationTimezone ? ` · ${profile.locationTimezone}` : ''}`
       : 'Makkah (default)';
 
   return (
@@ -538,7 +550,7 @@ export function SettingsView() {
                 Calculation method
               </Label>
               {booted ? (
-                <Select value={profile?.prayerMethod ?? 'MWL'} onValueChange={(v) => void save({ prayerMethod: v }, 'Calculation method updated.')}>
+                <Select value={resolvedMethodKey} onValueChange={(v) => void save({ prayerMethod: v }, 'Calculation method updated.')}>
                   <SelectTrigger id="method-select" className="w-full h-11! rounded-xl bg-card">
                     <SelectValue placeholder="Choose a method" />
                   </SelectTrigger>
@@ -590,6 +602,66 @@ export function SettingsView() {
 
             <Separator />
 
+            <div className="space-y-2">
+              <Label htmlFor="highlat-select" className="text-sm font-medium">
+                High-latitude adjustment
+              </Label>
+              {booted ? (
+                <Select
+                  value={resolvedHighLat.key}
+                  onValueChange={(v) => void save({ highLatRule: v }, 'High-latitude rule updated.')}
+                >
+                  <SelectTrigger id="highlat-select" className="w-full h-11! rounded-xl bg-card">
+                    <SelectValue placeholder="Choose a rule" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {HIGH_LAT_RULES.map((r) => (
+                      <SelectItem key={r.key} value={r.key} className="py-2.5">
+                        {r.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Skeleton className="h-11 w-full rounded-xl" />
+              )}
+              <p className="text-xs text-muted-foreground leading-relaxed">{resolvedHighLat.description}</p>
+            </div>
+
+            <Separator />
+
+            <fieldset className="space-y-2.5">
+              <legend className="text-sm font-medium">Time format</legend>
+              <RadioGroup
+                value={profile?.timeFormat === '24h' ? '24h' : '12h'}
+                onValueChange={(v) => void save({ timeFormat: v }, 'Time format updated.')}
+                className="gap-3"
+              >
+                <label
+                  htmlFor="fmt-12"
+                  className="flex items-center gap-3 rounded-xl border border-border/70 bg-card p-3.5 cursor-pointer hover:border-primary/40 transition-colors min-h-[44px]"
+                >
+                  <RadioGroupItem value="12h" id="fmt-12" />
+                  <span className="text-sm leading-snug">
+                    <span className="font-medium block">12-hour</span>
+                    <span className="text-xs text-muted-foreground">e.g. 4:06 PM</span>
+                  </span>
+                </label>
+                <label
+                  htmlFor="fmt-24"
+                  className="flex items-center gap-3 rounded-xl border border-border/70 bg-card p-3.5 cursor-pointer hover:border-primary/40 transition-colors min-h-[44px]"
+                >
+                  <RadioGroupItem value="24h" id="fmt-24" />
+                  <span className="text-sm leading-snug">
+                    <span className="font-medium block">24-hour</span>
+                    <span className="text-xs text-muted-foreground">e.g. 16:06</span>
+                  </span>
+                </label>
+              </RadioGroup>
+            </fieldset>
+
+            <Separator />
+
             <div className="space-y-2.5">
               <p className="text-sm font-medium flex items-center gap-1.5">
                 <MapPin className="h-4 w-4 text-primary" aria-hidden />
@@ -599,6 +671,7 @@ export function SettingsView() {
                 {booted ? locationLabel : <Skeleton className="h-5 w-40" />}
               </p>
               <div className="flex flex-wrap gap-2 pt-1">
+                <CityPicker className="min-w-[12rem]" />
                 <Button
                   variant="outline"
                   size="default"
@@ -621,7 +694,7 @@ export function SettingsView() {
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground leading-relaxed">
-                Coordinates stay in your anonymous profile and are only used to compute prayer times locally.
+                Coordinates and timezone stay in your anonymous profile and are only used to compute prayer times locally.
               </p>
             </div>
           </div>

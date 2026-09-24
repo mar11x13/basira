@@ -13,33 +13,41 @@ import { Separator } from '@/components/ui/separator';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
 import {
-  computePrayerTimes,
-  nextPrayer,
-  minutesUntilLabel,
+  PRAYER_KEYS,
+  PRAYER_LABELS,
   PRAYER_METHODS,
+  HIGH_LAT_RULES,
+  countdownLabel,
   getMethod,
-  type ComputedTimes,
-} from '@/lib/prayer-times';
+  MOSQUE_COMPARISON_NOTE,
+  MOSQUE_COMPARISON_NOTE_AR,
+  HIGH_LATITUDE_NOTE,
+  HIGH_LATITUDE_NOTE_AR,
+  type PrayerKey,
+} from '@/lib/prayer/core';
+import { usePrayerTimes } from '@/lib/prayer/store';
+import { CityPicker, GeolocateButton } from '@/components/prayer/city-picker';
+import { useT, useUiLanguage } from '@/lib/i18n';
 import type { SourceRecord } from '@/lib/types';
 import { cn } from '@/lib/utils';
 import { useToast } from '@/hooks/use-toast';
 import {
+  AlertTriangle,
   ChevronDown,
   Clock,
   CloudSun,
   HandHeart,
   Info,
   Lightbulb,
-  Loader2,
-  LocateFixed,
   MapPin,
   MoonStar,
+  RotateCw,
   ScrollText,
   Sun,
   SunMedium,
   Sunrise,
   Sunset,
-  X,
+  XCircle,
 } from 'lucide-react';
 
 // ============================================================================
@@ -55,9 +63,6 @@ const SALAH_TABS = [
   { key: 'rulings', label: 'Mistakes & Rulings' },
   { key: 'missed', label: 'Missed Prayer' },
 ] as const;
-
-const DEFAULT_LAT = 21.4225;
-const DEFAULT_LNG = 39.8262;
 
 // ————— data helpers —————
 
@@ -161,81 +166,57 @@ function GuideSkeletons() {
 // ————— Tab 1: Prayer Times —————
 
 const SIX_TIMES: {
-  key: keyof ComputedTimes;
-  label: string;
-  ar: string;
+  key: PrayerKey;
   icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
   informational?: boolean;
 }[] = [
-  { key: 'fajr', label: 'Fajr', ar: 'الفجر', icon: Sunrise },
-  { key: 'sunrise', label: 'Sunrise', ar: 'الشروق', icon: Sun, informational: true },
-  { key: 'dhuhr', label: 'Dhuhr', ar: 'الظهر', icon: SunMedium },
-  { key: 'asr', label: 'Asr', ar: 'العصر', icon: CloudSun },
-  { key: 'maghrib', label: 'Maghrib', ar: 'المغرب', icon: Sunset },
-  { key: 'isha', label: 'Isha', ar: 'العشاء', icon: MoonStar },
+  { key: 'fajr', icon: Sunrise },
+  { key: 'sunrise', icon: Sun, informational: true },
+  { key: 'dhuhr', icon: SunMedium },
+  { key: 'asr', icon: CloudSun },
+  { key: 'maghrib', icon: Sunset },
+  { key: 'isha', icon: MoonStar },
 ];
 
 function TimesTab() {
-  const profile = useApp((s) => s.profile);
   const updateProfile = useApp((s) => s.updateProfile);
   const { toast } = useToast();
-  const [mounted, setMounted] = React.useState(false);
-  const [now, setNow] = React.useState(() => new Date());
-  const [locating, setLocating] = React.useState(false);
+  const t = useT();
+  const lang = useUiLanguage();
+  const arabic = lang === 'ar';
+  // ONE source of truth — the shared prayer store (computed post-hydration
+  // by PrayerProvider). Nothing is calculated inside this component.
+  const prayer = usePrayerTimes(arabic ? 'ar' : 'en');
 
-  const lat = profile?.locationLat ?? DEFAULT_LAT;
-  const lng = profile?.locationLng ?? DEFAULT_LNG;
-  const methodKey = profile?.prayerMethod ?? 'MWL';
-  const asrFactor = (profile?.asrFactor === 2 ? 2 : 1) as 1 | 2;
-  const method = getMethod(methodKey);
-  const hasLocation = profile?.locationLat != null && profile?.locationLng != null;
+  const labelFor = (k: PrayerKey) => (arabic ? PRAYER_LABELS[k].ar : PRAYER_LABELS[k].en);
 
-  React.useEffect(() => {
-    setMounted(true);
-    // Battery-conscious ticking: pause while the tab is hidden, resync on return.
-    const tick = () => setNow(new Date());
-    let t: number | undefined;
-    const start = () => {
-      if (t == null) t = window.setInterval(tick, 30_000);
-    };
-    const stop = () => {
-      if (t != null) {
-        clearInterval(t);
-        t = undefined;
-      }
-    };
-    const onVisibility = () => {
-      if (document.hidden) stop();
-      else {
-        tick();
-        start();
-      }
-    };
-    if (!document.hidden) start();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, []);
+  // ——— honest error state — never fabricated times ———
+  if (prayer.status === 'error') {
+    return (
+      <Card className="paper-card border-border/80" role="alert">
+        <CardContent className="p-4 sm:p-5 space-y-4">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-5 w-5" aria-hidden />
+            </span>
+            <div>
+              <p className={cn('text-sm font-semibold text-foreground', arabic && 'font-arabic')}>{t('prayer.unavailable')}</p>
+              <p className={cn('text-xs text-muted-foreground mt-1 leading-relaxed', arabic && 'font-arabic')}>{t('prayer.unavailableSub')}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={prayer.retry} className="h-11 rounded-xl">
+              <RotateCw className="h-4 w-4 me-2" aria-hidden /> {t('prayer.retry')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  const times = React.useMemo(
-    () =>
-      computePrayerTimes({
-        lat,
-        lng,
-        timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
-        method: methodKey,
-        asrFactor,
-      }),
-    [lat, lng, methodKey, asrFactor]
-  );
-
-  const next = React.useMemo(() => nextPrayer(times, now), [times, now]);
-
-  // Render a skeleton until mounted: times depend on the browser timezone,
-  // and gating avoids any server/client hydration mismatch.
-  if (!mounted) {
+  // ——— deterministic skeleton (this is also the SSR render — identical
+  // markup on server and client, so hydration can never mismatch) ———
+  if (!prayer.ready || !prayer.snapshot) {
     return (
       <div role="status" aria-busy="true" aria-label="Computing prayer times" className="space-y-3">
         <Skeleton className="h-44 rounded-xl" />
@@ -244,67 +225,50 @@ function TimesTab() {
     );
   }
 
-  const locationLabel = hasLocation ? profile?.locationName || 'Your saved location' : 'Makkah (default)';
-  const coordsLabel = `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
+  const { snapshot, next, current, msUntilNext, fmt } = prayer;
+  const method = getMethod(snapshot.settings.methodKey);
+  const location = snapshot.location;
 
   const onMethodChange = async (v: string) => {
     try {
       await updateProfile({ prayerMethod: v });
-      toast({ title: 'Method updated', description: getMethod(v).name });
+      toast({ title: t('prayer.methodUpdated'), description: arabic ? getMethod(v).nameAr : getMethod(v).name });
     } catch {
-      toast({ title: 'Could not save method', description: 'Please try again in a moment.', variant: 'destructive' });
+      toast({ title: t('prayer.methodSaveFailed'), variant: 'destructive' });
     }
   };
 
   const onAsrChange = (factor: 1 | 2) => {
-    if (factor === asrFactor) return;
+    if ((factor === 2) === (snapshot.settings.asrJuristic === 'hanafi')) return;
     updateProfile({ asrFactor: factor }).catch(() => {
-      toast({ title: 'Could not save Asr setting', variant: 'destructive' });
+      toast({ title: t('prayer.asrSaveFailed'), variant: 'destructive' });
     });
   };
 
-  const locate = () => {
-    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
-      toast({
-        title: 'Location unavailable',
-        description: 'This browser does not expose geolocation.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    setLocating(true);
-    navigator.geolocation.getCurrentPosition(
-      async (pos) => {
-        try {
-          await updateProfile({
-            locationLat: pos.coords.latitude,
-            locationLng: pos.coords.longitude,
-            locationName: 'My location',
-          });
-          toast({ title: 'Location updated', description: 'Prayer times now use your current position.' });
-        } catch {
-          toast({ title: 'Could not save location', variant: 'destructive' });
-        } finally {
-          setLocating(false);
-        }
-      },
-      () => {
-        setLocating(false);
-        toast({
-          title: 'Location permission denied',
-          description: 'Keep the default (Makkah) or allow location and try again.',
-          variant: 'destructive',
-        });
-      },
-      { timeout: 10_000, maximumAge: 600_000 }
-    );
+  const onHighLatChange = (v: string) => {
+    if (v === snapshot.settings.highLatRule) return;
+    updateProfile({ highLatRule: v }).catch(() => {
+      toast({ title: t('prayer.saveFailed'), variant: 'destructive' });
+    });
+  };
+
+  const onTimeFormatChange = (v: '12h' | '24h') => {
+    if (v === snapshot.settings.timeFormat) return;
+    updateProfile({ timeFormat: v }).catch(() => {
+      toast({ title: t('prayer.saveFailed'), variant: 'destructive' });
+    });
   };
 
   const clearLocation = () => {
     updateProfile({ clearLocation: true }).catch(() => {
-      toast({ title: 'Could not clear location', variant: 'destructive' });
+      toast({ title: t('prayer.saveFailed'), variant: 'destructive' });
     });
   };
+
+  const locationLabel = location.isDefault ? t('home.makkahDefault') : location.city || t('home.yourLocation');
+  const coordsLabel = `${location.latitude.toFixed(4)}°, ${location.longitude.toFixed(4)}°`;
+  const selectedHighLat = HIGH_LAT_RULES.find((r) => r.key === snapshot.settings.highLatRule) ?? HIGH_LAT_RULES[0];
+  const isHighLat = Math.abs(location.latitude) >= 48;
 
   return (
     <div className="space-y-4">
@@ -317,26 +281,37 @@ function TimesTab() {
               <Clock className="h-6 w-6" aria-hidden />
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
-                Next prayer{next?.tomorrow ? ' · tomorrow' : ''}
+              <p
+                className={cn(
+                  'text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground flex items-center gap-2 flex-wrap',
+                  arabic && 'font-arabic tracking-normal'
+                )}
+              >
+                {t('home.nextPrayer')}
+                {next?.tomorrow ? <Badge variant="secondary" className="text-[0.6rem]">{t('home.tomorrow')}</Badge> : null}
               </p>
               {next ? (
-                <p className="font-display text-2xl sm:text-3xl font-semibold text-foreground leading-tight">
-                  {next.name}
+                <p className={cn('font-display text-2xl sm:text-3xl font-semibold text-foreground leading-tight', arabic && 'font-arabic')}>
+                  {labelFor(next.key)}
                   <span className="text-muted-foreground mx-1.5">·</span>
-                  <span className="tabular-nums">{next.time}</span>
+                  <span className="tabular-nums">{fmt(next.instant)}</span>
                 </p>
               ) : (
-                <p className="font-display text-2xl font-semibold text-foreground">Prayer times</p>
+                <p className="font-display text-2xl font-semibold text-foreground">{t('home.prayerTimes')}</p>
               )}
             </div>
-            {next ? (
-              <div className="text-right shrink-0">
+            {msUntilNext != null ? (
+              <div className="text-end shrink-0">
                 <p className="text-2xl sm:text-3xl font-bold text-primary tabular-nums leading-none">
-                  {minutesUntilLabel(next.minutesUntil)}
+                  {countdownLabel(msUntilNext, arabic ? 'ar' : 'en')}
                 </p>
-                <p className="mt-1 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
-                  remaining
+                <p
+                  className={cn(
+                    'mt-1 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground',
+                    arabic && 'font-arabic tracking-normal'
+                  )}
+                >
+                  {t('home.remaining')}
                 </p>
               </div>
             ) : null}
@@ -348,10 +323,11 @@ function TimesTab() {
       <ul
         className="paper-card rounded-xl border border-border/80 overflow-hidden divide-y divide-border/60"
         role="list"
-        aria-label="Today's prayer times"
+        aria-label={t('home.prayerTimes')}
       >
-        {SIX_TIMES.map(({ key, label, ar, icon: Icon, informational }) => {
+        {SIX_TIMES.map(({ key, icon: Icon, informational }) => {
           const isNext = next != null && next.key === key && !next.tomorrow;
+          const isCurrent = current === key && !informational;
           return (
             <li key={key} className={cn('flex items-center gap-3 px-4 py-3 min-h-[44px]', isNext && 'bg-primary/10')}>
               <span
@@ -363,82 +339,138 @@ function TimesTab() {
                 <Icon className="h-[1.15rem] w-[1.15rem]" aria-hidden />
               </span>
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-foreground leading-tight">
-                  {label}
-                  <span className="font-arabic text-sm font-normal text-muted-foreground ms-2">{ar}</span>
+                <p className={cn('text-sm font-semibold text-foreground leading-tight', arabic && 'font-arabic')}>
+                  {labelFor(key)}
+                  <span className={cn('text-sm font-normal text-muted-foreground ms-2', !arabic && 'font-arabic')}>
+                    {arabic ? PRAYER_LABELS[key].en : PRAYER_LABELS[key].ar}
+                  </span>
                   {informational ? (
-                    <Badge variant="secondary" className="ms-2 text-[0.6rem] align-middle">
-                      informational
-                    </Badge>
+                    <Badge variant="secondary" className="ms-2 text-[0.6rem] align-middle">{t('prayer.informational')}</Badge>
                   ) : null}
                 </p>
                 {isNext && next ? (
-                  <p className="mt-0.5 text-xs text-primary">Next prayer — in {minutesUntilLabel(next.minutesUntil)}</p>
+                  <p className={cn('mt-0.5 text-xs text-primary', arabic && 'font-arabic')}>
+                    {t('home.nextPrayer')} — {countdownLabel(msUntilNext ?? 0, arabic ? 'ar' : 'en')}
+                  </p>
+                ) : isCurrent ? (
+                  <p className={cn('mt-0.5 text-xs text-primary/80', arabic && 'font-arabic')}>{t('prayer.inProgress')}</p>
                 ) : null}
               </div>
               <p className={cn('shrink-0 text-base font-semibold tabular-nums', isNext ? 'text-primary' : 'text-foreground/90')}>
-                {times[key]}
+                {fmt(snapshot.times[key])}
               </p>
             </li>
           );
         })}
       </ul>
 
-      {/* ————— Method & Asr ————— */}
+      {/* ————— Method, Asr, high latitude, time format ————— */}
       <Card className="border-border/80">
         <CardContent className="p-4 sm:p-5 space-y-5">
           <div className="space-y-2">
-            <p className="text-sm font-semibold text-foreground">Calculation method</p>
-            <Select value={methodKey} onValueChange={onMethodChange}>
-              <SelectTrigger id="prayer-method" className="w-full h-11! rounded-xl" aria-label="Calculation method">
-                <SelectValue placeholder="Choose a method" />
+            <label htmlFor="prayer-method" className={cn('text-sm font-semibold text-foreground', arabic && 'font-arabic')}>
+              {t('prayer.method')}
+            </label>
+            <Select value={snapshot.settings.methodKey} onValueChange={onMethodChange}>
+              <SelectTrigger id="prayer-method" className="w-full h-11! rounded-xl" aria-label={t('prayer.method')}>
+                <SelectValue placeholder={t('prayer.methodPlaceholder')} />
               </SelectTrigger>
               <SelectContent>
                 {PRAYER_METHODS.map((m) => (
-                  <SelectItem key={m.key} value={m.key}>
-                    {m.name}
+                  <SelectItem key={m.key} value={m.key} className="py-2.5">
+                    {arabic ? m.nameAr : m.name}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            <p className="text-xs text-muted-foreground leading-relaxed">{method.description}</p>
+            <p className={cn('text-xs text-muted-foreground leading-relaxed', arabic && 'font-arabic')}>
+              {arabic ? method.descriptionAr : method.description}
+            </p>
           </div>
 
           <Separator />
 
           <div className="space-y-2">
-            <p className="text-sm font-semibold text-foreground">Asr calculation</p>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Asr calculation method">
+            <p className={cn('text-sm font-semibold text-foreground', arabic && 'font-arabic')}>{t('prayer.asr')}</p>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t('prayer.asr')}>
               <button
                 type="button"
                 role="radio"
-                aria-checked={asrFactor === 1}
+                aria-checked={snapshot.settings.asrJuristic === 'standard'}
                 onClick={() => onAsrChange(1)}
                 className={cn(
-                  'min-h-[52px] rounded-xl border px-3 py-2 text-left transition-colors focus-ring',
-                  asrFactor === 1
+                  'min-h-[52px] rounded-xl border px-3 py-2 text-start transition-colors focus-ring',
+                  snapshot.settings.asrJuristic === 'standard'
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border bg-card text-foreground/80 hover:border-primary/40'
                 )}
               >
-                <span className="block text-sm font-semibold">Standard</span>
-                <span className="block text-[0.7rem] leading-snug opacity-80">Shafi’i, Maliki, Hanbali</span>
+                <span className={cn('block text-sm font-semibold', arabic && 'font-arabic')}>{t('prayer.asrStandard')}</span>
+                <span className="block text-[0.7rem] leading-snug opacity-80">{t('prayer.asrStandardSub')}</span>
               </button>
               <button
                 type="button"
                 role="radio"
-                aria-checked={asrFactor === 2}
+                aria-checked={snapshot.settings.asrJuristic === 'hanafi'}
                 onClick={() => onAsrChange(2)}
                 className={cn(
-                  'min-h-[52px] rounded-xl border px-3 py-2 text-left transition-colors focus-ring',
-                  asrFactor === 2
+                  'min-h-[52px] rounded-xl border px-3 py-2 text-start transition-colors focus-ring',
+                  snapshot.settings.asrJuristic === 'hanafi'
                     ? 'border-primary bg-primary/10 text-primary'
                     : 'border-border bg-card text-foreground/80 hover:border-primary/40'
                 )}
               >
-                <span className="block text-sm font-semibold">Hanafi</span>
-                <span className="block text-[0.7rem] leading-snug opacity-80">shadow factor 2</span>
+                <span className={cn('block text-sm font-semibold', arabic && 'font-arabic')}>{t('prayer.asrHanafi')}</span>
+                <span className="block text-[0.7rem] leading-snug opacity-80">{t('prayer.asrHanafiSub')}</span>
               </button>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <label htmlFor="prayer-highlat" className={cn('text-sm font-semibold text-foreground', arabic && 'font-arabic')}>
+              {t('prayer.highLat')}
+            </label>
+            <Select value={snapshot.settings.highLatRule} onValueChange={onHighLatChange}>
+              <SelectTrigger id="prayer-highlat" className="w-full h-11! rounded-xl" aria-label={t('prayer.highLat')}>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {HIGH_LAT_RULES.map((r) => (
+                  <SelectItem key={r.key} value={r.key} className="py-2.5">
+                    {arabic ? r.nameAr : r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className={cn('text-xs text-muted-foreground leading-relaxed', arabic && 'font-arabic')}>
+              {arabic ? selectedHighLat.descriptionAr : selectedHighLat.description}
+            </p>
+          </div>
+
+          <Separator />
+
+          <div className="space-y-2">
+            <p className={cn('text-sm font-semibold text-foreground', arabic && 'font-arabic')}>{t('prayer.timeFormat')}</p>
+            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label={t('prayer.timeFormat')}>
+              {(['12h', '24h'] as const).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  aria-checked={snapshot.settings.timeFormat === v}
+                  onClick={() => onTimeFormatChange(v)}
+                  className={cn(
+                    'min-h-[44px] rounded-xl border px-3 py-2 text-sm font-medium transition-colors focus-ring',
+                    snapshot.settings.timeFormat === v
+                      ? 'border-primary bg-primary/10 text-primary'
+                      : 'border-border bg-card text-foreground/80 hover:border-primary/40'
+                  )}
+                >
+                  {v === '12h' ? `12 ${t('prayer.hour')}` : `24 ${t('prayer.hour')}`}
+                </button>
+              ))}
             </div>
           </div>
         </CardContent>
@@ -447,40 +479,47 @@ function TimesTab() {
       {/* ————— Location ————— */}
       <Card className="border-border/80">
         <CardContent className="p-4 sm:p-5 space-y-3">
-          <p className="text-sm font-semibold text-foreground">Location</p>
+          <p className={cn('text-sm font-semibold text-foreground', arabic && 'font-arabic')}>{t('prayer.location')}</p>
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
               <MapPin className="h-5 w-5" aria-hidden />
             </span>
             <div className="min-w-0">
-              <p className="truncate text-sm font-medium text-foreground">{locationLabel}</p>
-              <p className="text-xs text-muted-foreground tabular-nums">{coordsLabel}</p>
+              <p className={cn('truncate text-sm font-medium text-foreground', arabic && 'font-arabic')}>{locationLabel}</p>
+              <p className="text-xs text-muted-foreground tabular-nums truncate">
+                {coordsLabel} · {location.timezone}
+              </p>
             </div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={locate} disabled={locating} className="h-11 flex-1 rounded-xl">
-              {locating ? (
-                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
-              ) : (
-                <LocateFixed className="h-4 w-4" aria-hidden />
-              )}
-              {locating ? 'Locating…' : 'Use my location'}
-            </Button>
-            {hasLocation ? (
-              <Button variant="outline" onClick={clearLocation} disabled={locating} className="h-11 rounded-xl">
-                <X className="h-4 w-4" aria-hidden />
-                Clear
-              </Button>
-            ) : null}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            <CityPicker />
+            <GeolocateButton />
           </div>
+          {!location.isDefault ? (
+            <Button
+              variant="ghost"
+              onClick={clearLocation}
+              className="h-11 rounded-xl text-muted-foreground"
+            >
+              <XCircle className="h-4 w-4 me-2" aria-hidden /> {t('prayer.clearLocation')}
+            </Button>
+          ) : null}
+          <p className={cn('text-xs text-muted-foreground leading-relaxed', arabic && 'font-arabic')}>
+            {t('prayer.locationPrivacy')}
+          </p>
         </CardContent>
       </Card>
 
-      <p className="flex items-start gap-1.5 text-xs text-muted-foreground leading-relaxed">
+      <p className={cn('flex items-start gap-1.5 text-xs text-muted-foreground leading-relaxed', arabic && 'font-arabic')}>
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" aria-hidden />
-        Times are astronomical estimates for your coordinates, method and Asr setting — please confirm with your local
-        mosque, especially at high latitudes.
+        {arabic ? MOSQUE_COMPARISON_NOTE_AR : MOSQUE_COMPARISON_NOTE}
       </p>
+      {isHighLat ? (
+        <p className={cn('flex items-start gap-1.5 text-xs text-muted-foreground leading-relaxed', arabic && 'font-arabic')}>
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" aria-hidden />
+          {arabic ? HIGH_LATITUDE_NOTE_AR : HIGH_LATITUDE_NOTE}
+        </p>
+      ) : null}
     </div>
   );
 }

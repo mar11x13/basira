@@ -1,10 +1,20 @@
 import { NextResponse } from 'next/server';
 import { getOrCreateSession, toProfile, deleteAllUserData } from '@/lib/session';
 import { db } from '@/lib/db';
+import { isValidTimezone, resolveMethodKey } from '@/lib/prayer/core';
 
 const MADHHABS = new Set(['HANAFI', 'SHAFII', 'MALIKI', 'HANBALI']);
-const METHODS = new Set(['MWL', 'ISNA', 'EGYPT', 'MAKKAH', 'KARACHI']);
 const LANGS = new Set(['en', 'ar', 'bilingual']);
+const HIGH_LAT_RULES = new Set(['auto', 'middle', 'seventh', 'twilight']);
+const TIME_FORMATS = new Set(['12h', '24h']);
+
+/**
+ * Accepted calculation-method keys. Legacy keys (EGYPT, MAKKAH) are accepted
+ * for backward compatibility and normalized to their current registry keys.
+ */
+function isAcceptedMethodKey(v: string): boolean {
+  return resolveMethodKey(v) === v;
+}
 
 export async function PATCH(req: Request) {
   try {
@@ -20,16 +30,24 @@ export async function PATCH(req: Request) {
     if (typeof body.showTranslit === 'boolean') data.showTranslit = body.showTranslit;
     if (typeof body.beginnerMode === 'boolean') data.beginnerMode = body.beginnerMode;
     if (typeof body.translationPref === 'string') data.translationPref = body.translationPref.slice(0, 40);
-    if (typeof body.prayerMethod === 'string' && METHODS.has(body.prayerMethod)) data.prayerMethod = body.prayerMethod;
+    if (typeof body.prayerMethod === 'string' && isAcceptedMethodKey(body.prayerMethod)) {
+      data.prayerMethod = resolveMethodKey(body.prayerMethod);
+    }
     if (body.asrFactor === 1 || body.asrFactor === 2) data.asrFactor = body.asrFactor;
+    if (typeof body.highLatRule === 'string' && HIGH_LAT_RULES.has(body.highLatRule)) data.highLatRule = body.highLatRule;
+    if (typeof body.timeFormat === 'string' && TIME_FORMATS.has(body.timeFormat)) data.timeFormat = body.timeFormat;
     if (typeof body.locationLat === 'number' && typeof body.locationLng === 'number') {
       data.locationLat = body.locationLat;
       data.locationLng = body.locationLng;
+    }
+    if (typeof body.locationTimezone === 'string' && isValidTimezone(body.locationTimezone)) {
+      data.locationTimezone = body.locationTimezone;
     }
     if (body.clearLocation === true) {
       data.locationLat = null;
       data.locationLng = null;
       data.locationName = null;
+      data.locationTimezone = null;
     }
     if (typeof body.locationName === 'string') data.locationName = body.locationName.slice(0, 120) || null;
     for (const k of ['notifyPrayer', 'notifyQuran', 'notifyDhikr', 'notifyFriday', 'onboarded'] as const) {

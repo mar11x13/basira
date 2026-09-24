@@ -84,30 +84,17 @@ export interface Profile {
   translationPref: string;
   prayerMethod: string;
   asrFactor: number;
+  highLatRule?: string | null;
+  timeFormat?: string | null;
   locationLat?: number | null;
   locationLng?: number | null;
   locationName?: string | null;
+  locationTimezone?: string | null;
   notifyPrayer: boolean;
   notifyQuran: boolean;
   notifyDhikr: boolean;
   notifyFriday: boolean;
   onboarded: boolean;
-}
-
-export interface PrayerTimesResult {
-  date: string; // YYYY-MM-DD
-  location: { lat: number; lng: number; name?: string | null };
-  method: string;
-  asrFactor: number;
-  times: {
-    fajr: string;
-    sunrise: string;
-    dhuhr: string;
-    asr: string;
-    maghrib: string;
-    isha: string;
-  };
-  next?: { name: string; time: string; minutesUntil: number } | null;
 }
 
 export interface HijriResult {

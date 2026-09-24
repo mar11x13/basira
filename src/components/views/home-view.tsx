@@ -8,7 +8,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Badge } from '@/components/ui/badge';
-import { computePrayerTimes, nextPrayer, minutesUntilLabel, prayerLabel, PRAYER_ORDER, getMethod } from '@/lib/prayer-times';
+import { usePrayerTimes } from '@/lib/prayer/store';
+import { PRAYER_KEYS, PRAYER_LABELS, countdownLabel, getMethod, type PrayerKey } from '@/lib/prayer/core';
 import type { HijriResult } from '@/lib/types';
 import {
   Sparkles,
@@ -24,6 +25,8 @@ import {
   Clock,
   MapPin,
   Bookmark,
+  AlertTriangle,
+  RotateCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -41,6 +44,8 @@ const QUICK_ACTIONS = [
 const MORE_ACTIONS = [{ key: 'bookmarks', labelKey: 'nav.bookmarks', icon: Bookmark }] as const;
 
 function greeting(t: (k: string) => string): { salam: string; sub: string } {
+  // NOTE: only ever called inside an effect (post-hydration) — the initial
+  // render shows a deterministic placeholder so server HTML === client HTML.
   const h = new Date().getHours();
   if (h < 5) return { salam: t('home.lateNight'), sub: t('home.lateNightSub') };
   if (h < 12) return { salam: t('home.morning'), sub: t('home.morningSub') };
@@ -48,81 +53,99 @@ function greeting(t: (k: string) => string): { salam: string; sub: string } {
   return { salam: t('home.evening'), sub: t('home.eveningSub') };
 }
 
-/** Arabic names for the five prayers + sunrise (used in RTL mode). */
-const PRAYER_LABELS_AR: Record<string, string> = {
-  fajr: 'الفجر',
-  sunrise: 'الشروق',
-  dhuhr: 'الظهر',
-  asr: 'العصر',
-  maghrib: 'المغرب',
-  isha: 'العشاء',
-};
+/** Arabic names for the five prayers + sunrise (stable mapping — never runtime-translated). */
+const PRAYER_LABELS_AR: Record<string, string> = Object.fromEntries(
+  PRAYER_KEYS.map((k) => [k, PRAYER_LABELS[k].ar]),
+);
+
+// ————— deterministic shimmer primitives (identical on server & client) —————
+
+function ShimmerBar({ className }: { className?: string }) {
+  return <div className={cn('animate-pulse rounded-md bg-muted/70', className)} aria-hidden />;
+}
+
+function PrayerStripSkeleton() {
+  // Same card geometry as the live strip: layout never shifts when the live
+  // data lands. Contains NO time/location text → nothing to mismatch.
+  return (
+    <Card className="paper-card overflow-hidden border-border/80">
+      <div className="pattern-khatim pattern-fade h-1.5 w-full" aria-hidden />
+      <CardContent className="p-4 sm:p-5">
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="flex h-11 w-11 items-center justify-center rounded-full bg-primary/10 text-primary shrink-0">
+              <Clock className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="space-y-2">
+              <ShimmerBar className="h-3.5 w-20" />
+              <ShimmerBar className="h-6 w-44 max-w-full" />
+            </div>
+          </div>
+          <div className="space-y-2 text-end">
+            <ShimmerBar className="h-8 w-20" />
+            <ShimmerBar className="h-2.5 w-14 ms-auto" />
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-6 gap-1" aria-hidden>
+          {PRAYER_KEYS.map((k) => (
+            <div key={k} className="rounded-lg bg-muted/70 py-1.5 px-0.5 space-y-1.5">
+              <ShimmerBar className="h-2.5 w-full rounded-sm" />
+              <ShimmerBar className="h-3 w-full rounded-sm" />
+            </div>
+          ))}
+        </div>
+        <div className="mt-3 flex items-center justify-between gap-2">
+          <ShimmerBar className="h-3.5 w-52 max-w-[60%]" />
+          <span className="h-11" aria-hidden />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
 
 function PrayerStrip() {
-  const profile = useApp((s) => s.profile);
   const setView = useApp((s) => s.setView);
   const t = useT();
   const lang = useUiLanguage();
   const arabic = lang === 'ar';
-  const [now, setNow] = React.useState(() => new Date());
+  // ONE source of truth: the shared prayer store (computed post-hydration by
+  // PrayerProvider — never during SSR, so the initial render is identical on
+  // both sides).
+  const prayer = usePrayerTimes(arabic ? 'ar' : 'en');
 
-  const labelFor = (k: string) => (arabic ? (PRAYER_LABELS_AR[k] ?? prayerLabel(k)) : prayerLabel(k));
+  const labelFor = (k: PrayerKey) => (arabic ? PRAYER_LABELS_AR[k] : PRAYER_LABELS[k].en);
 
-  const times = React.useMemo(
-    () =>
-      computePrayerTimes({
-        lat: profile?.locationLat ?? 21.4225,
-        lng: profile?.locationLng ?? 39.8262,
-        timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
-        method: profile?.prayerMethod ?? 'MWL',
-        asrFactor: (profile?.asrFactor === 2 ? 2 : 1) as 1 | 2,
-      }),
-    [profile?.locationLat, profile?.locationLng, profile?.prayerMethod, profile?.asrFactor]
-  );
+  if (prayer.status === 'error') {
+    return (
+      <Card className="paper-card overflow-hidden border-border/80" role="alert">
+        <CardContent className="p-4 sm:p-5 space-y-3">
+          <div className="flex items-start gap-3">
+            <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
+              <AlertTriangle className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-foreground">{t('prayer.unavailable')}</p>
+              <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{t('prayer.unavailableSub')}</p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button onClick={prayer.retry} className="h-11 rounded-xl">
+              <RotateCw className="h-4 w-4 me-2" aria-hidden /> {t('prayer.retry')}
+            </Button>
+            <Button variant="outline" onClick={() => setView('salah')} className="h-11 rounded-xl">
+              <MapPin className="h-4 w-4 me-2" aria-hidden /> {t('prayer.locationSettings')}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
 
-  const next = React.useMemo(() => nextPrayer(times, now), [times, now]);
+  if (!prayer.ready || !prayer.snapshot) {
+    return <PrayerStripSkeleton />;
+  }
 
-  React.useEffect(() => {
-    // Battery-conscious ticking: only tick while the page is visible; resync
-    // immediately when it becomes visible again (so the countdown is never
-    // stale after the user returns from another tab/app).
-    const tick = () => setNow(new Date());
-    let t: number | undefined;
-    const start = () => {
-      if (t == null) t = window.setInterval(tick, 30_000);
-    };
-    const stop = () => {
-      if (t != null) {
-        clearInterval(t);
-        t = undefined;
-      }
-    };
-    const onVisibility = () => {
-      if (document.hidden) stop();
-      else {
-        tick();
-        start();
-      }
-    };
-    if (!document.hidden) start();
-    document.addEventListener('visibilitychange', onVisibility);
-    return () => {
-      stop();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  }, []);
-
-  // Time-aware cell styling: passed prayers rest dimmed, the next prayer glows.
-  const nowMinutes = now.getHours() * 60 + now.getMinutes();
-  const minutesOf = (label: string) => {
-    const m = label.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if (!m) return null;
-    let h = parseInt(m[1], 10);
-    const min = parseInt(m[2], 10);
-    if (m[3].toUpperCase() === 'PM' && h !== 12) h += 12;
-    if (m[3].toUpperCase() === 'AM' && h === 12) h = 0;
-    return h * 60 + min;
-  };
+  const { snapshot, next, current, msUntilNext, fmt } = prayer;
 
   return (
     <Card className="paper-card overflow-hidden border-border/80">
@@ -141,7 +164,7 @@ function PrayerStrip() {
                     {next.tomorrow ? ` (${t('home.tomorrow')})` : ''}
                   </p>
                   <p className={cn('font-display text-xl font-semibold text-foreground leading-tight', arabic && 'font-arabic')}>
-                    {arabic && next.key ? (PRAYER_LABELS_AR[next.key] ?? next.name) : next.name} · {next.time}
+                    {labelFor(next.key)} · {fmt(next.instant)}
                   </p>
                 </>
               ) : (
@@ -150,10 +173,10 @@ function PrayerStrip() {
             </div>
           </div>
           <div className="text-end">
-            {next && (
+            {msUntilNext != null && (
               <>
                 <p className="text-2xl font-bold text-primary tabular-nums leading-none">
-                  {minutesUntilLabel(next.minutesUntil)}
+                  {countdownLabel(msUntilNext, arabic ? 'ar' : 'en')}
                 </p>
                 <p className="text-[0.65rem] text-muted-foreground mt-1 uppercase tracking-wider">{t('home.remaining')}</p>
               </>
@@ -162,11 +185,11 @@ function PrayerStrip() {
         </div>
 
         <div className="mt-4 grid grid-cols-6 gap-1 text-center" role="list" aria-label={t('home.prayerTimes')}>
-          {PRAYER_ORDER.map((k) => {
+          {PRAYER_KEYS.map((k) => {
             const isNext = next?.key === k && !next.tomorrow;
             const isInfo = k === 'sunrise';
-            const mins = minutesOf(times[k]);
-            const hasPassed = !isNext && mins != null && mins <= nowMinutes;
+            const timeText = fmt(snapshot.times[k]).replace(/\s?(AM|PM|ص|م)/, '');
+            const passed = !isNext && current != null && PRAYER_KEYS.indexOf(k) <= PRAYER_KEYS.indexOf(current) && k !== 'sunrise';
             return (
               <div
                 key={k}
@@ -178,7 +201,7 @@ function PrayerStrip() {
                     : isInfo
                       ? 'bg-muted/40'
                       : 'bg-muted/70',
-                  hasPassed && !isInfo && 'opacity-55'
+                  passed && 'opacity-55'
                 )}
               >
                 <p
@@ -191,7 +214,7 @@ function PrayerStrip() {
                   {labelFor(k)}
                 </p>
                 <p className={cn('text-[0.72rem] font-semibold tabular-nums mt-0.5', isInfo && 'opacity-70', isNext ? 'text-primary-foreground' : 'text-foreground/85')}>
-                  {times[k].replace(/ (AM|PM)/, '')}
+                  {timeText}
                 </p>
               </div>
             );
@@ -199,16 +222,23 @@ function PrayerStrip() {
         </div>
 
         <div className="mt-3 flex items-center justify-between gap-2 flex-wrap">
-          <p className="text-[0.68rem] text-muted-foreground flex items-center gap-1">
-            <MapPin className="h-3 w-3" aria-hidden />
-            {profile?.locationLat != null
-              ? profile.locationName || t('home.yourLocation')
-              : t('home.makkahDefault')}
-            <span className="mx-1 opacity-50">·</span>
-            {getMethod(profile?.prayerMethod ?? 'MWL').name}
+          <p className="text-[0.68rem] text-muted-foreground flex items-center gap-1 min-w-0">
+            <MapPin className="h-3 w-3 shrink-0" aria-hidden />
+            <span className="truncate">
+              {snapshot.location.isDefault
+                ? t('home.makkahDefault')
+                : snapshot.location.city || t('home.yourLocation')}
+              <span className="mx-1 opacity-50">·</span>
+              {arabic ? getMethod(snapshot.settings.methodKey).nameAr : getMethod(snapshot.settings.methodKey).name}
+            </span>
           </p>
-          <Button variant="ghost" size="sm" className="h-7 text-xs text-primary px-2" onClick={() => setView('salah')}>
-            {t('home.prayerGuide')} <ChevronRight className="h-3.5 w-3.5 ms-0.5 rtl:rotate-180" />
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-11 px-3 text-xs text-primary rounded-lg"
+            onClick={() => setView('salah')}
+          >
+            {t('home.prayerGuide')} <ChevronRight className="h-3.5 w-3.5 ms-0.5 rtl:rotate-180" aria-hidden />
           </Button>
         </div>
       </CardContent>
@@ -225,8 +255,15 @@ export function HomeView() {
   const [hijri, setHijri] = React.useState<HijriResult | null>(null);
   const [recent, setRecent] = React.useState<{ id: string; question: string }[]>([]);
   const [reading, setReading] = React.useState<{ surahNumber: number; lastAyah: number }[]>([]);
-  const g = greeting(t);
+  // Time-aware greeting — computed ONLY after hydration (a render-time
+  // new Date() here would differ between server and client → hydration
+  // mismatch). Initial render: deterministic non-breaking placeholder.
+  const [g, setG] = React.useState<{ salam: string; sub: string } | null>(null);
   const arabicUi = lang === 'ar';
+
+  React.useEffect(() => {
+    setG(greeting(t));
+  }, [t]);
 
   React.useEffect(() => {
     fetch('/api/hijri')
@@ -259,9 +296,15 @@ export function HomeView() {
                 </>
               )}
             </h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              {g.salam}
-              {profile?.displayName ? `, ${profile.displayName}` : ''} — {g.sub}
+            <p className="text-sm text-muted-foreground mt-1 min-h-[1.25rem]" aria-live="polite">
+              {g ? (
+                <>
+                  {g.salam}
+                  {profile?.displayName ? `, ${profile.displayName}` : ''} — {g.sub}
+                </>
+              ) : (
+                '\u00A0'
+              )}
             </p>
           </div>
           {hijri && (

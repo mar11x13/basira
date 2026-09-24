@@ -7,6 +7,7 @@ import { LogoWord } from '@/components/brand/logo';
 import { Button } from '@/components/ui/button';
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from '@/components/ui/sheet';
 import { RecordDialog } from '@/components/shared/record-dialog';
+import { PrayerProvider } from '@/components/prayer/prayer-provider';
 import { useTheme } from 'next-themes';
 import { useT, navLabel, useUiLanguage, useDocumentDirection } from '@/lib/i18n';
 import {
@@ -112,6 +113,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div dir={dir} className="min-h-screen flex flex-col bg-background">
+      {/* The single prayer engine driver — computes after hydration only */}
+      <PrayerProvider />
       {/* ————— Desktop sidebar ————— */}
       <aside className="hidden lg:flex fixed inset-y-0 start-0 w-64 flex-col border-e border-border/70 bg-sidebar z-40">
         <div className="px-5 pt-6 pb-4">

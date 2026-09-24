@@ -1,0 +1,731 @@
+     1→'use client';
+     2→
+     3→import * as React from 'react';
+     4→import { useApp } from '@/lib/store';
+     5→import { ViewHeader, EmptyState } from '@/components/shared/view-header';
+     6→import { SourceCard } from '@/components/shared/source-card';
+     7→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+     8→import { Card, CardContent } from '@/components/ui/card';
+     9→import { Button } from '@/components/ui/button';
+    10→import { Badge } from '@/components/ui/badge';
+    11→import { Skeleton } from '@/components/ui/skeleton';
+    12→import { Separator } from '@/components/ui/separator';
+    13→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    14→import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible';
+    15→import {
+    16→  computePrayerTimes,
+    17→  nextPrayer,
+    18→  minutesUntilLabel,
+    19→  PRAYER_METHODS,
+    20→  getMethod,
+    21→  type ComputedTimes,
+    22→} from '@/lib/prayer-times';
+    23→import type { SourceRecord } from '@/lib/types';
+    24→import { cn } from '@/lib/utils';
+    25→import { useToast } from '@/hooks/use-toast';
+    26→import {
+    27→  ChevronDown,
+    28→  Clock,
+    29→  CloudSun,
+    30→  HandHeart,
+    31→  Info,
+    32→  Lightbulb,
+    33→  Loader2,
+    34→  LocateFixed,
+    35→  MapPin,
+    36→  MoonStar,
+    37→  ScrollText,
+    38→  Sun,
+    39→  SunMedium,
+    40→  Sunrise,
+    41→  Sunset,
+    42→  X,
+    43→} from 'lucide-react';
+    44→
+    45→// ============================================================================
+    46→// SalahView — prayer times (computed locally), how to pray, wudu & purity,
+    47→// gentle rulings, and missed prayer — with school differences shown
+    48→// respectfully, never flattened.
+    49→// ============================================================================
+    50→
+    51→const SALAH_TABS = [
+    52→  { key: 'times', label: 'Prayer Times' },
+    53→  { key: 'how', label: 'How to Pray' },
+    54→  { key: 'wudu', label: 'Wudu & Purity' },
+    55→  { key: 'rulings', label: 'Mistakes & Rulings' },
+    56→  { key: 'missed', label: 'Missed Prayer' },
+    57→] as const;
+    58→
+    59→const DEFAULT_LAT = 21.4225;
+    60→const DEFAULT_LNG = 39.8262;
+    61→
+    62→// ————— data helpers —————
+    63→
+    64→/** Fetch records by exact slug list (order preserved by the API). */
+    65→function useSlugFetch(slugs: string, enabled = true): SourceRecord[] | null {
+    66→  const [records, setRecords] = React.useState<SourceRecord[] | null>(null);
+    67→  React.useEffect(() => {
+    68→    if (!enabled) return;
+    69→    let alive = true;
+    70→    setRecords(null);
+    71→    fetch(`/api/content?slugs=${encodeURIComponent(slugs)}`)
+    72→      .then((r) => (r.ok ? r.json() : Promise.reject(new Error('load failed'))))
+    73→      .then((d: { items?: SourceRecord[] }) => {
+    74→        if (alive) setRecords(d.items ?? []);
+    75→      })
+    76→      .catch(() => {
+    77→        if (alive) setRecords([]);
+    78→      });
+    79→    return () => {
+    80→      alive = false;
+    81→    };
+    82→  }, [slugs, enabled]);
+    83→  return records;
+    84→}
+    85→
+    86→function findBySlug(records: SourceRecord[] | null, slug: string): SourceRecord | null {
+    87→  return records?.find((r) => r.slug === slug) ?? null;
+    88→}
+    89→
+    90→// ————— shared presentation —————
+    91→
+    92→function StepList({ steps }: { steps: string[] }) {
+    93→  return (
+    94→    <ol className="space-y-3.5">
+    95→      {steps.map((step, i) => (
+    96→        <li key={i} className="flex gap-3">
+    97→          <span
+    98→            aria-hidden
+    99→            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-primary/25 bg-primary/10 text-primary text-sm font-bold"
+   100→          >
+   101→            {i + 1}
+   102→          </span>
+   103→          <p className="min-w-0 flex-1 pt-1 text-sm text-foreground/85 leading-relaxed">{step}</p>
+   104→        </li>
+   105→      ))}
+   106→    </ol>
+   107→  );
+   108→}
+   109→
+   110→function GuideCard({
+   111→  record,
+   112→  withSteps = true,
+   113→  className,
+   114→}: {
+   115→  record: SourceRecord;
+   116→  withSteps?: boolean;
+   117→  className?: string;
+   118→}) {
+   119→  return (
+   120→    <Card className={cn('paper-card border-border/80', className)}>
+   121→      <CardContent className="p-4 sm:p-5 space-y-3.5">
+   122→        <h3 className="font-display text-lg font-semibold text-foreground leading-snug">{record.title}</h3>
+   123→        <p className="text-[0.95rem] text-foreground/90 leading-relaxed">{record.englishText}</p>
+   124→        {withSteps && record.practicalSteps?.length ? <StepList steps={record.practicalSteps} /> : null}
+   125→        {record.explanation ? (
+   126→          <div className="border-t border-border/60 pt-3 text-sm text-muted-foreground leading-relaxed">
+   127→            <span className="mb-1 block text-[0.7rem] font-semibold uppercase tracking-wider text-foreground/60">
+   128→              Notes &amp; differences between schools
+   129→            </span>
+   130→            {record.explanation}
+   131→          </div>
+   132→        ) : null}
+   133→        {record.referenceNote ? (
+   134→          <p className="border-t border-border/40 pt-2.5 text-[0.7rem] italic leading-relaxed text-muted-foreground/80">
+   135→            {record.referenceNote}
+   136→          </p>
+   137→        ) : null}
+   138→      </CardContent>
+   139→    </Card>
+   140→  );
+   141→}
+   142→
+   143→function SunnahHeading({ children }: { children: React.ReactNode }) {
+   144→  return (
+   145→    <h3 className="flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+   146→      <ScrollText className="h-4 w-4 text-gold" aria-hidden />
+   147→      {children}
+   148→    </h3>
+   149→  );
+   150→}
+   151→
+   152→function GuideSkeletons() {
+   153→  return (
+   154→    <div role="status" aria-busy="true" aria-label="Loading guide" className="space-y-3">
+   155→      <Skeleton className="h-80 rounded-xl" />
+   156→      <Skeleton className="h-48 rounded-xl" />
+   157→    </div>
+   158→  );
+   159→}
+   160→
+   161→// ————— Tab 1: Prayer Times —————
+   162→
+   163→const SIX_TIMES: {
+   164→  key: keyof ComputedTimes;
+   165→  label: string;
+   166→  ar: string;
+   167→  icon: React.ComponentType<{ className?: string; 'aria-hidden'?: boolean }>;
+   168→  informational?: boolean;
+   169→}[] = [
+   170→  { key: 'fajr', label: 'Fajr', ar: 'الفجر', icon: Sunrise },
+   171→  { key: 'sunrise', label: 'Sunrise', ar: 'الشروق', icon: Sun, informational: true },
+   172→  { key: 'dhuhr', label: 'Dhuhr', ar: 'الظهر', icon: SunMedium },
+   173→  { key: 'asr', label: 'Asr', ar: 'العصر', icon: CloudSun },
+   174→  { key: 'maghrib', label: 'Maghrib', ar: 'المغرب', icon: Sunset },
+   175→  { key: 'isha', label: 'Isha', ar: 'العشاء', icon: MoonStar },
+   176→];
+   177→
+   178→function TimesTab() {
+   179→  const profile = useApp((s) => s.profile);
+   180→  const updateProfile = useApp((s) => s.updateProfile);
+   181→  const { toast } = useToast();
+   182→  const [mounted, setMounted] = React.useState(false);
+   183→  const [now, setNow] = React.useState(() => new Date());
+   184→  const [locating, setLocating] = React.useState(false);
+   185→
+   186→  const lat = profile?.locationLat ?? DEFAULT_LAT;
+   187→  const lng = profile?.locationLng ?? DEFAULT_LNG;
+   188→  const methodKey = profile?.prayerMethod ?? 'MWL';
+   189→  const asrFactor = (profile?.asrFactor === 2 ? 2 : 1) as 1 | 2;
+   190→  const method = getMethod(methodKey);
+   191→  const hasLocation = profile?.locationLat != null && profile?.locationLng != null;
+   192→
+   193→  React.useEffect(() => {
+   194→    setMounted(true);
+   195→    // Battery-conscious ticking: pause while the tab is hidden, resync on return.
+   196→    const tick = () => setNow(new Date());
+   197→    let t: number | undefined;
+   198→    const start = () => {
+   199→      if (t == null) t = window.setInterval(tick, 30_000);
+   200→    };
+   201→    const stop = () => {
+   202→      if (t != null) {
+   203→        clearInterval(t);
+   204→        t = undefined;
+   205→      }
+   206→    };
+   207→    const onVisibility = () => {
+   208→      if (document.hidden) stop();
+   209→      else {
+   210→        tick();
+   211→        start();
+   212→      }
+   213→    };
+   214→    if (!document.hidden) start();
+   215→    document.addEventListener('visibilitychange', onVisibility);
+   216→    return () => {
+   217→      stop();
+   218→      document.removeEventListener('visibilitychange', onVisibility);
+   219→    };
+   220→  }, []);
+   221→
+   222→  const times = React.useMemo(
+   223→    () =>
+   224→      computePrayerTimes({
+   225→        lat,
+   226→        lng,
+   227→        timezoneOffsetMinutes: -new Date().getTimezoneOffset(),
+   228→        method: methodKey,
+   229→        asrFactor,
+   230→      }),
+   231→    [lat, lng, methodKey, asrFactor]
+   232→  );
+   233→
+   234→  const next = React.useMemo(() => nextPrayer(times, now), [times, now]);
+   235→
+   236→  // Render a skeleton until mounted: times depend on the browser timezone,
+   237→  // and gating avoids any server/client hydration mismatch.
+   238→  if (!mounted) {
+   239→    return (
+   240→      <div role="status" aria-busy="true" aria-label="Computing prayer times" className="space-y-3">
+   241→        <Skeleton className="h-44 rounded-xl" />
+   242→        <Skeleton className="h-96 rounded-xl" />
+   243→      </div>
+   244→    );
+   245→  }
+   246→
+   247→  const locationLabel = hasLocation ? profile?.locationName || 'Your saved location' : 'Makkah (default)';
+   248→  const coordsLabel = `${lat.toFixed(4)}°, ${lng.toFixed(4)}°`;
+   249→
+   250→  const onMethodChange = async (v: string) => {
+   251→    try {
+   252→      await updateProfile({ prayerMethod: v });
+   253→      toast({ title: 'Method updated', description: getMethod(v).name });
+   254→    } catch {
+   255→      toast({ title: 'Could not save method', description: 'Please try again in a moment.', variant: 'destructive' });
+   256→    }
+   257→  };
+   258→
+   259→  const onAsrChange = (factor: 1 | 2) => {
+   260→    if (factor === asrFactor) return;
+   261→    updateProfile({ asrFactor: factor }).catch(() => {
+   262→      toast({ title: 'Could not save Asr setting', variant: 'destructive' });
+   263→    });
+   264→  };
+   265→
+   266→  const locate = () => {
+   267→    if (typeof navigator === 'undefined' || !('geolocation' in navigator)) {
+   268→      toast({
+   269→        title: 'Location unavailable',
+   270→        description: 'This browser does not expose geolocation.',
+   271→        variant: 'destructive',
+   272→      });
+   273→      return;
+   274→    }
+   275→    setLocating(true);
+   276→    navigator.geolocation.getCurrentPosition(
+   277→      async (pos) => {
+   278→        try {
+   279→          await updateProfile({
+   280→            locationLat: pos.coords.latitude,
+   281→            locationLng: pos.coords.longitude,
+   282→            locationName: 'My location',
+   283→          });
+   284→          toast({ title: 'Location updated', description: 'Prayer times now use your current position.' });
+   285→        } catch {
+   286→          toast({ title: 'Could not save location', variant: 'destructive' });
+   287→        } finally {
+   288→          setLocating(false);
+   289→        }
+   290→      },
+   291→      () => {
+   292→        setLocating(false);
+   293→        toast({
+   294→          title: 'Location permission denied',
+   295→          description: 'Keep the default (Makkah) or allow location and try again.',
+   296→          variant: 'destructive',
+   297→        });
+   298→      },
+   299→      { timeout: 10_000, maximumAge: 600_000 }
+   300→    );
+   301→  };
+   302→
+   303→  const clearLocation = () => {
+   304→    updateProfile({ clearLocation: true }).catch(() => {
+   305→      toast({ title: 'Could not clear location', variant: 'destructive' });
+   306→    });
+   307→  };
+   308→
+   309→  return (
+   310→    <div className="space-y-4">
+   311→      {/* ————— Next prayer ————— */}
+   312→      <Card className="paper-card overflow-hidden border-border/80">
+   313→        <div className="pattern-khatim pattern-fade h-1.5 w-full" aria-hidden />
+   314→        <CardContent className="p-5 sm:p-6">
+   315→          <div className="flex items-center gap-4">
+   316→            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-md">
+   317→              <Clock className="h-6 w-6" aria-hidden />
+   318→            </span>
+   319→            <div className="min-w-0 flex-1">
+   320→              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">
+   321→                Next prayer{next?.tomorrow ? ' · tomorrow' : ''}
+   322→              </p>
+   323→              {next ? (
+   324→                <p className="font-display text-2xl sm:text-3xl font-semibold text-foreground leading-tight">
+   325→                  {next.name}
+   326→                  <span className="text-muted-foreground mx-1.5">·</span>
+   327→                  <span className="tabular-nums">{next.time}</span>
+   328→                </p>
+   329→              ) : (
+   330→                <p className="font-display text-2xl font-semibold text-foreground">Prayer times</p>
+   331→              )}
+   332→            </div>
+   333→            {next ? (
+   334→              <div className="text-right shrink-0">
+   335→                <p className="text-2xl sm:text-3xl font-bold text-primary tabular-nums leading-none">
+   336→                  {minutesUntilLabel(next.minutesUntil)}
+   337→                </p>
+   338→                <p className="mt-1 text-[0.65rem] font-medium uppercase tracking-wider text-muted-foreground">
+   339→                  remaining
+   340→                </p>
+   341→              </div>
+   342→            ) : null}
+   343→          </div>
+   344→        </CardContent>
+   345→      </Card>
+   346→
+   347→      {/* ————— Today's times ————— */}
+   348→      <ul
+   349→        className="paper-card rounded-xl border border-border/80 overflow-hidden divide-y divide-border/60"
+   350→        role="list"
+   351→        aria-label="Today's prayer times"
+   352→      >
+   353→        {SIX_TIMES.map(({ key, label, ar, icon: Icon, informational }) => {
+   354→          const isNext = next != null && next.key === key && !next.tomorrow;
+   355→          return (
+   356→            <li key={key} className={cn('flex items-center gap-3 px-4 py-3 min-h-[44px]', isNext && 'bg-primary/10')}>
+   357→              <span
+   358→                className={cn(
+   359→                  'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+   360→                  isNext ? 'bg-primary text-primary-foreground' : 'bg-primary/10 text-primary'
+   361→                )}
+   362→              >
+   363→                <Icon className="h-[1.15rem] w-[1.15rem]" aria-hidden />
+   364→              </span>
+   365→              <div className="min-w-0 flex-1">
+   366→                <p className="text-sm font-semibold text-foreground leading-tight">
+   367→                  {label}
+   368→                  <span className="font-arabic text-sm font-normal text-muted-foreground ms-2">{ar}</span>
+   369→                  {informational ? (
+   370→                    <Badge variant="secondary" className="ms-2 text-[0.6rem] align-middle">
+   371→                      informational
+   372→                    </Badge>
+   373→                  ) : null}
+   374→                </p>
+   375→                {isNext && next ? (
+   376→                  <p className="mt-0.5 text-xs text-primary">Next prayer — in {minutesUntilLabel(next.minutesUntil)}</p>
+   377→                ) : null}
+   378→              </div>
+   379→              <p className={cn('shrink-0 text-base font-semibold tabular-nums', isNext ? 'text-primary' : 'text-foreground/90')}>
+   380→                {times[key]}
+   381→              </p>
+   382→            </li>
+   383→          );
+   384→        })}
+   385→      </ul>
+   386→
+   387→      {/* ————— Method & Asr ————— */}
+   388→      <Card className="border-border/80">
+   389→        <CardContent className="p-4 sm:p-5 space-y-5">
+   390→          <div className="space-y-2">
+   391→            <p className="text-sm font-semibold text-foreground">Calculation method</p>
+   392→            <Select value={methodKey} onValueChange={onMethodChange}>
+   393→              <SelectTrigger id="prayer-method" className="w-full h-11! rounded-xl" aria-label="Calculation method">
+   394→                <SelectValue placeholder="Choose a method" />
+   395→              </SelectTrigger>
+   396→              <SelectContent>
+   397→                {PRAYER_METHODS.map((m) => (
+   398→                  <SelectItem key={m.key} value={m.key}>
+   399→                    {m.name}
+   400→                  </SelectItem>
+   401→                ))}
+   402→              </SelectContent>
+   403→            </Select>
+   404→            <p className="text-xs text-muted-foreground leading-relaxed">{method.description}</p>
+   405→          </div>
+   406→
+   407→          <Separator />
+   408→
+   409→          <div className="space-y-2">
+   410→            <p className="text-sm font-semibold text-foreground">Asr calculation</p>
+   411→            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Asr calculation method">
+   412→              <button
+   413→                type="button"
+   414→                role="radio"
+   415→                aria-checked={asrFactor === 1}
+   416→                onClick={() => onAsrChange(1)}
+   417→                className={cn(
+   418→                  'min-h-[52px] rounded-xl border px-3 py-2 text-left transition-colors focus-ring',
+   419→                  asrFactor === 1
+   420→                    ? 'border-primary bg-primary/10 text-primary'
+   421→                    : 'border-border bg-card text-foreground/80 hover:border-primary/40'
+   422→                )}
+   423→              >
+   424→                <span className="block text-sm font-semibold">Standard</span>
+   425→                <span className="block text-[0.7rem] leading-snug opacity-80">Shafi’i, Maliki, Hanbali</span>
+   426→              </button>
+   427→              <button
+   428→                type="button"
+   429→                role="radio"
+   430→                aria-checked={asrFactor === 2}
+   431→                onClick={() => onAsrChange(2)}
+   432→                className={cn(
+   433→                  'min-h-[52px] rounded-xl border px-3 py-2 text-left transition-colors focus-ring',
+   434→                  asrFactor === 2
+   435→                    ? 'border-primary bg-primary/10 text-primary'
+   436→                    : 'border-border bg-card text-foreground/80 hover:border-primary/40'
+   437→                )}
+   438→              >
+   439→                <span className="block text-sm font-semibold">Hanafi</span>
+   440→                <span className="block text-[0.7rem] leading-snug opacity-80">shadow factor 2</span>
+   441→              </button>
+   442→            </div>
+   443→          </div>
+   444→        </CardContent>
+   445→      </Card>
+   446→
+   447→      {/* ————— Location ————— */}
+   448→      <Card className="border-border/80">
+   449→        <CardContent className="p-4 sm:p-5 space-y-3">
+   450→          <p className="text-sm font-semibold text-foreground">Location</p>
+   451→          <div className="flex items-center gap-3">
+   452→            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
+   453→              <MapPin className="h-5 w-5" aria-hidden />
+   454→            </span>
+   455→            <div className="min-w-0">
+   456→              <p className="truncate text-sm font-medium text-foreground">{locationLabel}</p>
+   457→              <p className="text-xs text-muted-foreground tabular-nums">{coordsLabel}</p>
+   458→            </div>
+   459→          </div>
+   460→          <div className="flex flex-wrap gap-2">
+   461→            <Button onClick={locate} disabled={locating} className="h-11 flex-1 rounded-xl">
+   462→              {locating ? (
+   463→                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+   464→              ) : (
+   465→                <LocateFixed className="h-4 w-4" aria-hidden />
+   466→              )}
+   467→              {locating ? 'Locating…' : 'Use my location'}
+   468→            </Button>
+   469→            {hasLocation ? (
+   470→              <Button variant="outline" onClick={clearLocation} disabled={locating} className="h-11 rounded-xl">
+   471→                <X className="h-4 w-4" aria-hidden />
+   472→                Clear
+   473→              </Button>
+   474→            ) : null}
+   475→          </div>
+   476→        </CardContent>
+   477→      </Card>
+   478→
+   479→      <p className="flex items-start gap-1.5 text-xs text-muted-foreground leading-relaxed">
+   480→        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-gold" aria-hidden />
+   481→        Times are astronomical estimates for your coordinates, method and Asr setting — please confirm with your local
+   482→        mosque, especially at high latitudes.
+   483→      </p>
+   484→    </div>
+   485→  );
+   486→}
+   487→
+   488→// ————— Tab 2: How to Pray —————
+   489→
+   490→function HowToTab() {
+   491→  const records = useSlugFetch('fiqh-how-to-pray,fiqh-prayer-times-overview,hadith-bukhari-631');
+   492→  const howTo = findBySlug(records, 'fiqh-how-to-pray');
+   493→  const overview = findBySlug(records, 'fiqh-prayer-times-overview');
+   494→  const hadith = findBySlug(records, 'hadith-bukhari-631');
+   495→
+   496→  if (!records) return <GuideSkeletons />;
+   497→  if (!howTo && !overview) {
+   498→    return (
+   499→      <EmptyState
+   500→        icon={<MoonStar className="h-8 w-8" aria-hidden />}
+   501→        title="Guide unavailable"
+   502→        hint="The step-by-step prayer guide could not be loaded. Please try again in a moment."
+   503→      />
+   504→    );
+   505→  }
+   506→
+   507→  return (
+   508→    <div className="space-y-4">
+   509→      <Card className="border-gold/40 bg-gold/5">
+   510→        <CardContent className="flex items-start gap-3 p-4">
+   511→          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-gold/15 text-gold">
+   512→            <Lightbulb className="h-[1.1rem] w-[1.1rem]" aria-hidden />
+   513→          </span>
+   514→          <p className="text-sm text-foreground/85 leading-relaxed">
+   515→            <span className="font-semibold text-foreground">Beginner note: </span>
+   516→            The five prayers differ only in rakʿah count — learn one, and you know them all.
+   517→          </p>
+   518→        </CardContent>
+   519→      </Card>
+   520→
+   521→      {howTo ? <GuideCard record={howTo} /> : null}
+   522→      {overview ? <GuideCard record={overview} withSteps={false} /> : null}
+   523→
+   524→      {hadith ? (
+   525→        <section aria-label="Related hadith" className="space-y-2">
+   526→          <SunnahHeading>From the Sunnah</SunnahHeading>
+   527→          <SourceCard record={hadith} defaultOpen />
+   528→        </section>
+   529→      ) : null}
+   530→    </div>
+   531→  );
+   532→}
+   533→
+   534→// ————— Tab 3: Wudu & Purity —————
+   535→
+   536→function WuduTab() {
+   537→  const records = useSlugFetch('fiqh-wudu-steps,fiqh-wudu-breaks,fiqh-ghusl,fiqh-tayammum,hadith-bukhari-164');
+   538→  const wuduSteps = findBySlug(records, 'fiqh-wudu-steps');
+   539→  const wuduBreaks = findBySlug(records, 'fiqh-wudu-breaks');
+   540→  const ghusl = findBySlug(records, 'fiqh-ghusl');
+   541→  const tayammum = findBySlug(records, 'fiqh-tayammum');
+   542→  const hadith = findBySlug(records, 'hadith-bukhari-164');
+   543→
+   544→  if (!records) return <GuideSkeletons />;
+   545→  if (!wuduSteps && !wuduBreaks && !ghusl && !tayammum) {
+   546→    return (
+   547→      <EmptyState
+   548→        icon={<HandHeart className="h-8 w-8" aria-hidden />}
+   549→        title="Guide unavailable"
+   550→        hint="The purity guides could not be loaded. Please try again in a moment."
+   551→      />
+   552→    );
+   553→  }
+   554→
+   555→  return (
+   556→    <div className="space-y-4">
+   557→      {wuduSteps ? <GuideCard record={wuduSteps} /> : null}
+   558→
+   559→      {hadith ? (
+   560→        <section aria-label="Uthman's demonstration of wudu" className="space-y-2">
+   561→          <SunnahHeading>Uthman’s demonstration of wudu</SunnahHeading>
+   562→          <SourceCard record={hadith} />
+   563→        </section>
+   564→      ) : null}
+   565→
+   566→      {wuduBreaks ? <GuideCard record={wuduBreaks} withSteps={false} /> : null}
+   567→      {ghusl ? <GuideCard record={ghusl} /> : null}
+   568→      {tayammum ? <GuideCard record={tayammum} withSteps={false} /> : null}
+   569→    </div>
+   570→  );
+   571→}
+   572→
+   573→// ————— Tab 4: Mistakes & Rulings —————
+   574→
+   575→function RulingsTab() {
+   576→  const records = useSlugFetch('fiqh-prayer-mistakes,fiqh-prayer-invalidators');
+   577→  const mistakes = findBySlug(records, 'fiqh-prayer-mistakes');
+   578→  const invalidators = findBySlug(records, 'fiqh-prayer-invalidators');
+   579→
+   580→  const [witrOpen, setWitrOpen] = React.useState(false);
+   581→  const [handsOpen, setHandsOpen] = React.useState(false);
+   582→  const witrRecords = useSlugFetch('fiqh-witr-positions,hadith-abudawud-1416', witrOpen);
+   583→  const handsRecords = useSlugFetch('scholarly-hands-position', handsOpen);
+   584→  const witrGuide = findBySlug(witrRecords, 'fiqh-witr-positions');
+   585→  const witrHadith = findBySlug(witrRecords, 'hadith-abudawud-1416');
+   586→  const handsView = findBySlug(handsRecords, 'scholarly-hands-position');
+   587→
+   588→  if (!records) return <GuideSkeletons />;
+   589→
+   590→  return (
+   591→    <div className="space-y-4">
+   592→      {mistakes ? <GuideCard record={mistakes} /> : null}
+   593→      {invalidators ? <GuideCard record={invalidators} withSteps={false} /> : null}
+   594→
+   595→      <section aria-label="Common questions" className="space-y-3">
+   596→        <h3 className="text-xs font-semibold uppercase tracking-[0.14em] text-muted-foreground">Common questions</h3>
+   597→
+   598→        {/* Witr */}
+   599→        <Collapsible open={witrOpen} onOpenChange={setWitrOpen}>
+   600→          <CollapsibleTrigger
+   601→            className={cn(
+   602→              'flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-left',
+   603→              'border-primary/25 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors focus-ring'
+   604→            )}
+   605→            aria-label="What about Witr differences? Expand for the answer"
+   606→          >
+   607→            What about Witr differences?
+   608→            <ChevronDown
+   609→              className={cn('h-4 w-4 shrink-0 transition-transform', witrOpen && 'rotate-180')}
+   610→              aria-hidden
+   611→            />
+   612→          </CollapsibleTrigger>
+   613→          <CollapsibleContent className="pt-3 space-y-3">
+   614→            {witrRecords == null ? (
+   615→              <Skeleton className="h-40 rounded-xl" />
+   616→            ) : (
+   617→              <>
+   618→                {witrGuide ? <GuideCard record={witrGuide} withSteps={false} /> : null}
+   619→                {witrHadith ? <SourceCard record={witrHadith} /> : null}
+   620→              </>
+   621→            )}
+   622→          </CollapsibleContent>
+   623→        </Collapsible>
+   624→
+   625→        {/* Hands position */}
+   626→        <Collapsible open={handsOpen} onOpenChange={setHandsOpen}>
+   627→          <CollapsibleTrigger
+   628→            className={cn(
+   629→              'flex min-h-[44px] w-full items-center justify-between gap-2 rounded-xl border px-4 py-2.5 text-left',
+   630→              'border-primary/25 bg-primary/5 text-sm font-medium text-primary hover:bg-primary/10 transition-colors focus-ring'
+   631→            )}
+   632→            aria-label="Where to place the hands in prayer? Expand for the answer"
+   633→          >
+   634→            Where to place hands?
+   635→            <ChevronDown
+   636→              className={cn('h-4 w-4 shrink-0 transition-transform', handsOpen && 'rotate-180')}
+   637→              aria-hidden
+   638→            />
+   639→          </CollapsibleTrigger>
+   640→          <CollapsibleContent className="pt-3 space-y-3">
+   641→            {handsRecords == null ? (
+   642→              <Skeleton className="h-40 rounded-xl" />
+   643→            ) : handsView ? (
+   644→              <SourceCard record={handsView} />
+   645→            ) : null}
+   646→          </CollapsibleContent>
+   647→        </Collapsible>
+   648→      </section>
+   649→    </div>
+   650→  );
+   651→}
+   652→
+   653→// ————— Tab 5: Missed Prayer —————
+   654→
+   655→function MissedTab() {
+   656→  const records = useSlugFetch('fiqh-missed-prayer,hadith-bukhari-597,hadith-bukhari-asr-warning');
+   657→  const guide = findBySlug(records, 'fiqh-missed-prayer');
+   658→  const mercyHadith = findBySlug(records, 'hadith-bukhari-597');
+   659→  const asrWarning = findBySlug(records, 'hadith-bukhari-asr-warning');
+   660→
+   661→  if (!records) return <GuideSkeletons />;
+   662→
+   663→  return (
+   664→    <div className="space-y-4">
+   665→      <Card className="border-primary/30 bg-primary/5">
+   666→        <CardContent className="flex items-start gap-3 p-4">
+   667→          <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+   668→            <HandHeart className="h-[1.1rem] w-[1.1rem]" aria-hidden />
+   669→          </span>
+   670→          <p className="text-sm text-foreground/85 leading-relaxed">
+   671→            <span className="font-semibold text-foreground">Mercy first. </span>
+   672→            Forgetting is human — Islam’s answer is not guilt but a simple instruction: pray it as soon as you
+   673→            remember. For long-standing chronic cases, scholars differ respectfully, and BASIRA points you to them
+   674→            rather than inventing one blanket ruling.
+   675→          </p>
+   676→        </CardContent>
+   677→      </Card>
+   678→
+   679→      {guide ? <GuideCard record={guide} withSteps={false} /> : null}
+   680→
+   681→      {mercyHadith || asrWarning ? (
+   682→        <section aria-label="Related hadith" className="space-y-2">
+   683→          <SunnahHeading>From the Sunnah</SunnahHeading>
+   684→          {mercyHadith ? <SourceCard record={mercyHadith} defaultOpen /> : null}
+   685→          {asrWarning ? <SourceCard record={asrWarning} /> : null}
+   686→        </section>
+   687→      ) : null}
+   688→    </div>
+   689→  );
+   690→}
+   691→
+   692→// ————— View —————
+   693→
+   694→export function SalahView() {
+   695→  return (
+   696→    <div className="space-y-5">
+   697→      <ViewHeader
+   698→        title="Salah"
+   699→        titleAr="الصلاة"
+   700→        description="Learn prayer step by step — beginner-friendly, with the beautiful differences between schools shown respectfully."
+   701→      />
+   702→
+   703→      <Tabs defaultValue="times">
+   704→        <TabsList className="h-auto w-full justify-start overflow-x-auto scrollbar-soft flex-nowrap gap-0.5 p-1">
+   705→          {SALAH_TABS.map(({ key, label }) => (
+   706→            <TabsTrigger key={key} value={key} className="flex-none px-3 h-11 text-[0.8rem]">
+   707→              {label}
+   708→            </TabsTrigger>
+   709→          ))}
+   710→        </TabsList>
+   711→
+   712→        <TabsContent value="times" className="mt-3">
+   713→          <TimesTab />
+   714→        </TabsContent>
+   715→        <TabsContent value="how" className="mt-3">
+   716→          <HowToTab />
+   717→        </TabsContent>
+   718→        <TabsContent value="wudu" className="mt-3">
+   719→          <WuduTab />
+   720→        </TabsContent>
+   721→        <TabsContent value="rulings" className="mt-3">
+   722→          <RulingsTab />
+   723→        </TabsContent>
+   724→        <TabsContent value="missed" className="mt-3">
+   725→          <MissedTab />
+   726→        </TabsContent>
+   727→      </Tabs>
+   728→    </div>
+   729→  );
+   730→}
+   731→
